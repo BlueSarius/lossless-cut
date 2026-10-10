@@ -31,7 +31,6 @@ import HttpServer from './httpServer.js';
 import isDev from './isDev.js';
 import isStoreBuild from './isStoreBuild.js';
 import { getAboutPanelOptions } from './aboutPanel.js';
-import { checkNewVersion } from './updateChecker.js';
 import * as i18nCommon from './i18nCommon.js';
 import './i18n.js';
 import type { ApiActionRequest } from '../common/types.js';
@@ -68,7 +67,6 @@ let mainWindow: BrowserWindow | null;
 
 let askBeforeClose = false;
 let rendererReady = false;
-let newVersion: string | undefined;
 
 const openFiles = (paths: string[]) => mainWindow!.webContents.send('openFiles', paths);
 
@@ -228,7 +226,7 @@ async function openExternal(url: string) {
 
 function updateMenu() {
   assert(mainWindow);
-  menu({ app, mainWindow, newVersion, isStoreBuild, openExternal });
+  menu({ app, mainWindow, isStoreBuild, openExternal });
 }
 
 async function changeLanguage(language: string | null) {
@@ -258,7 +256,7 @@ function parseCliArgs(rawArgv = process.argv) {
   const argsWithoutAppName = rawArgv.length > ignoreFirstArgs ? rawArgv.slice(ignoreFirstArgs) : [];
 
   return yargsParser(argsWithoutAppName, {
-    boolean: ['disable-networking'],
+    boolean: ['disable-networking', 'enable-networking'],
     string: ['settings-json', 'config-dir', 'lossy-mode'],
   });
 }
@@ -378,7 +376,8 @@ async function init() {
     if (filesToOpen.length === 0) filesToOpen = argv._.map(String);
     const { settingsJson } = argv;
 
-    setDisableNetworking(argv['disableNetworking']);
+    // Networking is disabled by default; opt in with --enable-networking
+    setDisableNetworking(!argv['enableNetworking'] || !!argv['disableNetworking']);
 
     if (settingsJson != null) {
       logger.info('initializing settings', settingsJson);
@@ -408,14 +407,6 @@ async function init() {
     createWindow();
     // will also updateMenu and set about panel options
     await changeLanguage(language);
-
-    const enableUpdateCheck = configStore.get('enableUpdateCheck');
-
-    if (!hasDisabledNetworking() && enableUpdateCheck && !isStoreBuild) {
-      newVersion = await checkNewVersion();
-      // newVersion = '1.2.3';
-      if (newVersion) updateMenu();
-    }
   } catch (err) {
     logger.error('Failed to initialize', err);
   }

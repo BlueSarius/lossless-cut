@@ -2,7 +2,6 @@ import invariant from 'tiny-invariant';
 import type { FFprobeStream, FFprobeStreamDisposition } from '../../../common/ffprobe';
 import type { AvoidNegativeTs } from '../../../common/types';
 import type { AllFilesMeta, ChromiumHTMLAudioElement, ChromiumHTMLVideoElement, CopyfileStreams, LiteFFprobeStream } from '../types';
-import type { FileStream } from '../ffmpeg';
 
 
 // taken from `ffmpeg -codecs`
@@ -318,7 +317,6 @@ export function getEffectiveAvoidNegativeTs({ avoidNegativeTs, allFilesMeta, cop
 export const getAudioStreams = <T extends Pick<FFprobeStream, 'codec_type'>>(streams: T[]) => streams.filter((stream) => stream.codec_type === 'audio');
 export const getRealVideoStreams = <T extends Pick<FFprobeStream, 'codec_type' | 'disposition'>>(streams: T[]) => streams.filter((stream) => stream.codec_type === 'video' && !isStreamThumbnail(stream));
 export const getSubtitleStreams = <T extends Pick<FFprobeStream, 'codec_type'>>(streams: T[]) => streams.filter((stream) => stream.codec_type === 'subtitle');
-export const isGpsStream = <T extends Pick<FileStream, 'guessedType' | 'codec_type' | 'tags'>>(stream: T) => stream.codec_type === 'subtitle' && (stream.tags?.['handler_name'] === '\u0010DJI.Subtitle' || stream.guessedType === 'dji-gps-srt');
 
 // videoTracks/audioTracks seems to be 1-indexed, while ffmpeg is 0-indexes
 const getHtml5TrackId = (ffmpegTrackIndex: number) => String(ffmpegTrackIndex + 1);

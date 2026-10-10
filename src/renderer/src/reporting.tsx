@@ -4,8 +4,6 @@ import { Trans } from 'react-i18next';
 import CopyClipboardButton from './components/CopyClipboardButton';
 import { isStoreBuild, isMasBuild, isWindowsStoreBuild, isExecaError, appVersion, appPath } from './util';
 import getSwal from './swal';
-import { discussionsUrl, githubUrl, publicBugReportUrl, supportEmail } from '../../common/constants';
-import mainApi from './mainApi';
 
 const remote = window.require('@electron/remote');
 const { platform, arch } = remote.require('./index.js');
@@ -18,23 +16,6 @@ export function openSendReportDialog({ err, message, state }: {
   message?: string,
   state?: unknown,
 }) {
-  const reportInstructions = isStoreBuild
-    ? (
-      <>
-        <p>{i18n.t('Please send us an email where you describe what you were doing.')}</p>
-        <p><span className="link-button" role="button" onClick={() => mainApi.openExternal(`mailto:${supportEmail}`)}>{supportEmail}</span></p>
-      </>
-    ) : (
-      <Trans>
-        <p>
-          If you&apos;re having a problem or question about LosslessCut, please first check the links in the <b>Help</b> menu. If you cannot find any resolution, you may ask a question in <span className="link-button" role="button" onClick={() => mainApi.openExternal(discussionsUrl)}>GitHub discussions</span> or on <span className="link-button" role="button" onClick={() => mainApi.openExternal(githubUrl)}>Discord.</span>
-        </p>
-        <p>
-          If you believe that you found a bug in LosslessCut, you may <span className="link-button" role="button" onClick={() => mainApi.openExternal(publicBugReportUrl)}>report a bug</span>.
-        </p>
-      </Trans>
-    );
-
   const errorText = (() => {
     if (err == null) return 'No error occurred.';
     return err instanceof Error ? err.stack : String(err);
@@ -78,8 +59,6 @@ export function openSendReportDialog({ err, message, state }: {
     showConfirmButton: false,
     html: (
       <div style={{ textAlign: 'left', overflow: 'auto', maxHeight: 300, overflowY: 'auto' }}>
-        {reportInstructions}
-
         <p style={{ marginBottom: 0 }}><Trans>Include the following text:</Trans> <CopyClipboardButton text={text} /></p>
 
         {!isStoreBuild && <p style={{ marginTop: '.2em', fontSize: '.8em', opacity: 0.7 }}><Trans>You might want to redact any sensitive information like paths.</Trans></p>}

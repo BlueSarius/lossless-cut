@@ -1,10 +1,10 @@
 import type { Dispatch, SetStateAction, CSSProperties, ReactNode, ChangeEventHandler, DragEventHandler } from 'react';
 import { memo, useState, useMemo, useCallback } from 'react';
 
-import { FaImage, FaPaperclip, FaVideo, FaVideoSlash, FaFileImport, FaVolumeUp, FaVolumeMute, FaBan, FaFileExport, FaBook, FaInfoCircle, FaFilter, FaEye, FaEdit, FaTrash, FaSortNumericDown, FaSortNumericUp, FaHamburger, FaMap, FaLanguage } from 'react-icons/fa';
+import { FaImage, FaPaperclip, FaVideo, FaVideoSlash, FaFileImport, FaVolumeUp, FaVolumeMute, FaBan, FaFileExport, FaBook, FaInfoCircle, FaFilter, FaEye, FaEdit, FaTrash, FaSortNumericDown, FaSortNumericUp, FaHamburger, FaLanguage } from 'react-icons/fa';
 import { GoFileBinary } from 'react-icons/go';
 import { MdSubtitles } from 'react-icons/md';
-import { useTranslation, Trans } from 'react-i18next';
+import { useTranslation } from 'react-i18next';
 import prettyBytes from 'pretty-bytes';
 import { Tabs, TextField } from '@radix-ui/themes';
 import { produce } from 'immer';
@@ -15,14 +15,13 @@ import AutoExportToggler from './components/AutoExportToggler';
 import Select from './components/Select';
 import type { FileStream } from './ffmpeg';
 import { getStreamFps } from './ffmpeg';
-import { getActiveDisposition, attachedPicDisposition, isGpsStream } from './util/streams';
+import { getActiveDisposition, attachedPicDisposition } from './util/streams';
 import TagEditor from './components/TagEditor';
 import type { FFprobeChapter, FFprobeFormat, FFprobeStream } from '../../common/ffprobe';
 import { contentDispositionOptionsSchema, deleteDispositionValue, dispositionOptions, type ContentDispositionOptions, type FileParams, type FilesMeta, type FormatTimecode, type ParamsByFile, type StreamParams } from './types';
 import Button, { DialogButton } from './components/Button';
 import styles from './StreamsSelector.module.css';
 import Json5Dialog from './components/Json5Dialog';
-import GpsMap from './components/GpsMap';
 import Switch from './components/Switch';
 
 
@@ -510,30 +509,6 @@ const Stream = memo(({ filePath, stream, onToggle, toggleCopyStreamIds, copyStre
                   <MdSubtitles style={{ marginRight: '.3em' }} />
                   {t('Create segments from subtitles')}
                 </DropdownMenu.Item>
-              )}
-
-              {isGpsStream(stream) && (
-                <Dialog.Root>
-                  <Dialog.Trigger asChild>
-                    {/* https://github.com/radix-ui/primitives/issues/1836#issuecomment-1674338372 */}
-                    <DropdownMenu.Item onSelect={(e) => e.preventDefault()}>
-                      <FaMap style={{ marginRight: '.3em' }} />
-                      {t('Show GPS map')}
-                    </DropdownMenu.Item>
-                  </Dialog.Trigger>
-
-                  <Dialog.Portal>
-                    <Dialog.Overlay />
-
-                    <Dialog.Content aria-describedby={undefined}>
-                      <Dialog.Title>
-                        <Trans>GPS track</Trans>
-                      </Dialog.Title>
-
-                      <GpsMap filePath={filePath} streamIndex={stream.index} />
-                    </Dialog.Content>
-                  </Dialog.Portal>
-                </Dialog.Root>
               )}
 
               <DropdownMenu.Separator />
