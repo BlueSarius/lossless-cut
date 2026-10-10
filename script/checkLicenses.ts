@@ -33,7 +33,6 @@ const safeLicenses: Record<string, true | string[]> = {
   'MPL-2.0': true,
 
   // Special purpose licenses
-  'Hippocratic-2.1': ['@react-leaflet/core', 'react-leaflet'],
 
   // not software licenses
   'CC-BY-3.0': ['spdx-exceptions'], // eslint-plugin-unicorn

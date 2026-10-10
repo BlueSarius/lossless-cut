@@ -25,7 +25,7 @@ import { useSegColors } from './contexts';
 import { isExactDurationMatch } from './util/duration';
 import useUserSettings from './hooks/useUserSettings';
 import useActionTitle from './hooks/useActionTitle';
-import { askForPlaybackRate, checkAppPath } from './dialogs';
+import { askForPlaybackRate } from './dialogs';
 import type { FormatTimecode, GetFrameCount, ParseTimecode, PlaybackMode, SegmentColorIndex, SegmentToExport, StateSegment } from './types';
 import type { WaveformMode } from '../../common/types';
 import type { Frame } from './ffmpeg';
@@ -377,10 +377,6 @@ function BottomBar({
   const actionTitle = useActionTitle();
 
   const rotationStr = `${rotation}°`;
-
-  useEffect(() => {
-    checkAppPath();
-  }, []);
 
   const handleChangePlaybackRateClick = useCallback(async () => {
     const newRate = await askForPlaybackRate({ detectedFps, outputPlaybackRate });

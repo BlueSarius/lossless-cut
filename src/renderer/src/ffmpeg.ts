@@ -11,7 +11,7 @@ import { pcmAudioCodecs, isMov } from './util/streams';
 import { isExecaError } from './util';
 import { isDurationValid } from './segments';
 import type { FFprobeChapter, FFprobeFormat, FFprobeProbeResult, FFprobeStream } from '../../common/ffprobe';
-import { parseSrt, parseSrtToSegments } from './edlFormats';
+import { parseSrtToSegments } from './edlFormats';
 import { UnsupportedFileError, UserFacingError } from '../errors';
 import mainApi from './mainApi';
 import { parseFfprobeDuration } from '../../common/util';
@@ -396,11 +396,6 @@ export async function extractSubtitleTrack(filePath: string, streamId: number) {
 export async function extractSubtitleTrackToSegments(filePath: string, streamId: number) {
   const srt = await extractSubtitleTrack(filePath, streamId);
   return parseSrtToSegments(srt);
-}
-
-export async function extractSrtGpsTrack(filePath: string, streamId: number) {
-  const srt = await extractSubtitleTrack(filePath, streamId);
-  return parseSrt(srt);
 }
 
 export async function extractSubtitleTrackVtt(filePath: string, streamId: number) {

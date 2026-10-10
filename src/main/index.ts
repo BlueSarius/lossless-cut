@@ -31,7 +31,6 @@ import HttpServer from './httpServer.js';
 import isDev from './isDev.js';
 import isStoreBuild from './isStoreBuild.js';
 import { getAboutPanelOptions } from './aboutPanel.js';
-import { checkNewVersion } from './updateChecker.js';
 import * as i18nCommon from './i18nCommon.js';
 import './i18n.js';
 import type { ApiActionRequest } from '../common/types.js';
@@ -68,7 +67,6 @@ let mainWindow: BrowserWindow | null;
 
 let askBeforeClose = false;
 let rendererReady = false;
-let newVersion: string | undefined;
 
 const openFiles = (paths: string[]) => mainWindow!.webContents.send('openFiles', paths);
 
@@ -228,7 +226,7 @@ async function openExternal(url: string) {
 
 function updateMenu() {
   assert(mainWindow);
-  menu({ app, mainWindow, newVersion, isStoreBuild, openExternal });
+  menu({ app, mainWindow, isStoreBuild, openExternal });
 }
 
 async function changeLanguage(language: string | null) {
@@ -408,14 +406,6 @@ async function init() {
     createWindow();
     // will also updateMenu and set about panel options
     await changeLanguage(language);
-
-    const enableUpdateCheck = configStore.get('enableUpdateCheck');
-
-    if (!hasDisabledNetworking() && enableUpdateCheck && !isStoreBuild) {
-      newVersion = await checkNewVersion();
-      // newVersion = '1.2.3';
-      if (newVersion) updateMenu();
-    }
   } catch (err) {
     logger.error('Failed to initialize', err);
   }

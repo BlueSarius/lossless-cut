@@ -478,57 +478,6 @@ export function formatSrt(segments: SegmentBase[]) {
   return segments.reduce((acc, segment, index) => `${acc}${index > 0 ? '\r\n' : ''}${index + 1}\r\n${formatDuration({ seconds: segment.start }).replaceAll('.', ',')} --> ${formatDuration({ seconds: segment.end }).replaceAll('.', ',')}\r\n${segment.name || '-'}\r\n`, '');
 }
 
-export function parseDjiGps1(lines: string[]) {
-  const firstLine = lines[0];
-  if (firstLine == null) return undefined;
-
-  const gpsMatch = firstLine.match(/^\s*([^,]+),\s*SS\s+([^,]+),\s*ISO\s+([^,]+),\s*EV\s+([^,]+)(?:,\s*DZOOM\s+([^,]+))?,\s*GPS\s+\(([^,]+),\s*([^,]+),\s*([^,]+)\),\s*D\s+([^m]+)m,\s*H\s+([^m]+)m,\s*H\.S\s+([^m]+)m\/s,\s*V\.S\s+([^m]+)m\/s\s*$/);
-  if (!gpsMatch) return undefined;
-  return {
-    f: gpsMatch[1]!,
-    ss: parseFloat(gpsMatch[2]!),
-    iso: parseInt(gpsMatch[3]!, 10),
-    ev: parseFloat(gpsMatch[4]!),
-    dzoom: gpsMatch[5] != null ? parseFloat(gpsMatch[5]) : undefined,
-    lng: parseFloat(gpsMatch[6]!),
-    lat: parseFloat(gpsMatch[7]!),
-    alt: parseFloat(gpsMatch[8]!),
-    distance: parseFloat(gpsMatch[9]!),
-    height: parseFloat(gpsMatch[10]!),
-    horizontalSpeed: parseFloat(gpsMatch[11]!),
-    verticalSpeed: parseFloat(gpsMatch[12]!),
-  };
-}
-
-export function parseDjiGps2(lines: string[]) {
-  const xml = new XMLParser().parse(lines.join('\n'));
-  invariant(typeof xml.font === 'string');
-  const line: string = xml.font.split('\n')[2];
-  invariant(line != null);
-  const records: Record<string, string> = {};
-  const pairsMatch = line.match(/([^\s:[]+\s*:\s*[^\s\]]+)+/g);
-  if (pairsMatch == null) return undefined;
-  for (const match of pairsMatch) {
-    const split = match.split(':');
-    if (split.length === 2) {
-      const [key, value] = split;
-      if (key != null && value != null) {
-        records[key.trim()] = value.trim();
-      }
-    }
-  }
-  const altitude = parseFloat(records['abs_alt']!);
-  const lat = parseFloat(records['latitude']!);
-  const lng = parseFloat(records['longitude']!);
-  invariant(!Number.isNaN(lat));
-  invariant(!Number.isNaN(lng));
-  return {
-    altitude: Number.isNaN(altitude) ? undefined : altitude,
-    lat,
-    lng,
-  };
-}
-
 const otioSchema = z.object({
   OTIO_SCHEMA: z.string().refine((val) => val.startsWith('Timeline.'), { message: 'Invalid OTIO schema' }),
   name: z.string(),

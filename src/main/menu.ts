@@ -3,7 +3,7 @@ import type { BrowserWindow, MenuItem, MenuItemConstructorOptions } from 'electr
 import electron from 'electron';
 import { t } from 'i18next';
 
-import { homepageUrl, getReleaseUrl, licensesUrl, thanksUrl, usageUrl, faqUrl, troubleshootingUrl, featureRequestUrl, githubUrl } from '../common/constants.js';
+import { homepageUrl, licensesUrl, thanksUrl, usageUrl, faqUrl, troubleshootingUrl, featureRequestUrl, githubUrl } from '../common/constants.js';
 import { logFilePath } from './logger.js';
 import { getConfigPath } from './configStore.js';
 
@@ -14,10 +14,9 @@ const esc = (val: string) => val.replaceAll('&', '&&');
 
 const { Menu } = electron;
 
-export default ({ app, mainWindow, newVersion, isStoreBuild, openExternal }: {
+export default ({ app, mainWindow, isStoreBuild, openExternal }: {
   app: Electron.App,
   mainWindow: BrowserWindow,
-  newVersion?: string | undefined,
   isStoreBuild: boolean,
   openExternal: (url: string) => void,
 }) => {
@@ -506,18 +505,6 @@ export default ({ app, mainWindow, newVersion, isStoreBuild, openExternal }: {
       ],
     },
   ];
-
-  if (!isStoreBuild && newVersion) {
-    menu.push({
-      label: esc(t('New version!')),
-      submenu: [
-        {
-          label: esc(t('Download {{version}}', { version: newVersion })),
-          click() { openExternal(getReleaseUrl(newVersion)); },
-        },
-      ],
-    });
-  }
 
   Menu.setApplicationMenu(Menu.buildFromTemplate(menu));
 };
