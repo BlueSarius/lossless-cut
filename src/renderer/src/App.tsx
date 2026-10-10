@@ -968,7 +968,7 @@ function App() {
 
       if (!hideAllNotifications) {
         showOsNotification(i18n.t('Merge finished'));
-        openConcatFinishedDialog({ filePath: outPath, notices: [...notices], warnings: [...warnings] });
+        openConcatFinishedDialog({ filePath: outPath, outputPaths: [outPath], notices: [...notices], warnings: [...warnings] });
       }
     } catch (err) {
       if (err instanceof DirectoryAccessDeclinedError || isAbortedError(err)) return;
@@ -1213,7 +1213,7 @@ function App() {
       invariant(revealPath != null);
       if (!hideAllNotifications) {
         showOsNotification(i18n.t('Export finished'));
-        openCutFinishedDialog({ filePath: revealPath, warnings: [...warnings], notices: [...notices] });
+        openCutFinishedDialog({ filePath: revealPath, outputPaths: exportedPaths, warnings: [...warnings], notices: [...notices] });
       }
 
       setExportCount((c) => c + 1);

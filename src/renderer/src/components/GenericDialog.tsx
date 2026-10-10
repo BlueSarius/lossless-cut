@@ -12,6 +12,7 @@ import { showItemInFolder } from '../util';
 import type { CleanupChoice, CleanupChoicesType } from '../dialogs';
 import { ListItem, Notices, OutputIncorrectSeeHelpMenu, UnorderedList, Warnings } from '../dialogs';
 import Checkbox from './Checkbox';
+import OutputFilesInfo from './OutputFilesInfo';
 import { saveColor, warningColor } from '../colors';
 
 
@@ -178,7 +179,7 @@ export function useDialog() {
     }
   }, [showGenericDialog, t]);
 
-  const openCutFinishedDialog = useCallback(async ({ filePath, warnings, notices }: { filePath: string, warnings: string[], notices: string[] }) => {
+  const openCutFinishedDialog = useCallback(async ({ filePath, outputPaths, warnings, notices }: { filePath: string, outputPaths: string[], warnings: string[], notices: string[] }) => {
     const hasWarnings = warnings.length > 0;
 
     // https://github.com/mifi/lossless-cut/issues/2048
@@ -186,31 +187,37 @@ export function useDialog() {
       filePath,
       width: '60em',
       children: (
-        <UnorderedList>
-          <ListItem icon={<FaCheckCircle />} iconColor={hasWarnings ? warningColor : saveColor} style={{ fontWeight: 'bold' }}>{hasWarnings ? t('Export finished with warning(s)', { count: warnings.length }) : t('Export is done!')}</ListItem>
-          <Warnings warnings={warnings} />
-          <ListItem icon={<FaInfoCircle />}>{t('Please test the output file in your desired player/editor before you delete the source file.')}</ListItem>
-          <OutputIncorrectSeeHelpMenu />
-          <Notices notices={notices} />
-        </UnorderedList>
+        <>
+          <OutputFilesInfo paths={outputPaths} />
+          <UnorderedList>
+            <ListItem icon={<FaCheckCircle />} iconColor={hasWarnings ? warningColor : saveColor} style={{ fontWeight: 'bold' }}>{hasWarnings ? t('Export finished with warning(s)', { count: warnings.length }) : t('Export is done!')}</ListItem>
+            <Warnings warnings={warnings} />
+            <ListItem icon={<FaInfoCircle />}>{t('Please test the output file in your desired player/editor before you delete the source file.')}</ListItem>
+            <OutputIncorrectSeeHelpMenu />
+            <Notices notices={notices} />
+          </UnorderedList>
+        </>
       ),
     });
   }, [openExportFinishedDialog, t]);
 
-  const openConcatFinishedDialog = useCallback(async ({ filePath, warnings, notices }: { filePath: string, warnings: string[], notices: string[] }) => {
+  const openConcatFinishedDialog = useCallback(async ({ filePath, outputPaths, warnings, notices }: { filePath: string, outputPaths: string[], warnings: string[], notices: string[] }) => {
     const hasWarnings = warnings.length > 0;
 
     await openExportFinishedDialog({
       filePath,
       width: '60em',
       children: (
-        <UnorderedList>
-          <ListItem icon={<FaCheckCircle />} iconColor={hasWarnings ? 'warning' : 'success'} style={{ fontWeight: 'bold' }}>{hasWarnings ? t('Files merged with warning(s)', { count: warnings.length }) : t('Files merged!')}</ListItem>
-          <Warnings warnings={warnings} />
-          <ListItem icon={<FaInfoCircle />}>{t('Please test the output files in your desired player/editor before you delete the source files.')}</ListItem>
-          <OutputIncorrectSeeHelpMenu />
-          <Notices notices={notices} />
-        </UnorderedList>
+        <>
+          <OutputFilesInfo paths={outputPaths} />
+          <UnorderedList>
+            <ListItem icon={<FaCheckCircle />} iconColor={hasWarnings ? warningColor : saveColor} style={{ fontWeight: 'bold' }}>{hasWarnings ? t('Files merged with warning(s)', { count: warnings.length }) : t('Files merged!')}</ListItem>
+            <Warnings warnings={warnings} />
+            <ListItem icon={<FaInfoCircle />}>{t('Please test the output files in your desired player/editor before you delete the source files.')}</ListItem>
+            <OutputIncorrectSeeHelpMenu />
+            <Notices notices={notices} />
+          </UnorderedList>
+        </>
       ),
     });
   }, [openExportFinishedDialog, t]);
