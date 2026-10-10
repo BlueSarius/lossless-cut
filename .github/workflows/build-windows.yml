@@ -1,0 +1,53 @@
+# Fork-specific workflow: builds only the Windows x64 version and publishes it as a GitHub Release.
+# Started manually from the Actions tab ("Build Windows release" -> "Run workflow").
+name: Build Windows release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-2022
+    timeout-minutes: 60
+
+    steps:
+      # Windows fix. See https://github.com/actions/checkout/issues/226
+      - run: git config --global core.autocrlf false
+
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: 'yarn'
+
+      # Because of timeout issue https://github.com/yarnpkg/yarn/issues/4890
+      - run: yarn install --immutable --network-timeout 1000000
+
+      - run: yarn download-ffmpeg-win32-x64
+
+      - run: yarn build
+
+      - name: Build for Windows x64
+        run: yarn electron-builder --win 7z --x64 --publish never
+
+      - name: Read app version
+        id: version
+        shell: bash
+        run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.version.outputs.version }}-win.${{ github.run_number }}
+          name: LosslessCut ${{ steps.version.outputs.version }} (Windows build ${{ github.run_number }})
+          target_commitish: ${{ github.sha }}
+          body: |
+            Windows x64 build of commit ${{ github.sha }}.
+
+            Download `LosslessCut-win-x64.7z`, extract it (e.g. with 7-Zip) and run `LosslessCut.exe`.
+          files: dist/LosslessCut-win-x64.7z
+          fail_on_unmatched_files: true
