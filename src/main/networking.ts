@@ -1,4 +1,4 @@
-let disableNetworking: boolean;
+let disableNetworking = true;
 
 export const hasDisabledNetworking = () => !!disableNetworking;
 

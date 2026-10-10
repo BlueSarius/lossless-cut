@@ -256,7 +256,7 @@ function parseCliArgs(rawArgv = process.argv) {
   const argsWithoutAppName = rawArgv.length > ignoreFirstArgs ? rawArgv.slice(ignoreFirstArgs) : [];
 
   return yargsParser(argsWithoutAppName, {
-    boolean: ['disable-networking'],
+    boolean: ['disable-networking', 'enable-networking'],
     string: ['settings-json', 'config-dir', 'lossy-mode'],
   });
 }
@@ -376,7 +376,8 @@ async function init() {
     if (filesToOpen.length === 0) filesToOpen = argv._.map(String);
     const { settingsJson } = argv;
 
-    setDisableNetworking(argv['disableNetworking']);
+    // Networking is disabled by default; opt in with --enable-networking
+    setDisableNetworking(!argv['enableNetworking'] || !!argv['disableNetworking']);
 
     if (settingsJson != null) {
       logger.info('initializing settings', settingsJson);

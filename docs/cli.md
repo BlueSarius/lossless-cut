@@ -45,7 +45,8 @@ LosslessCut --settings-json '{customFfPath:"/path/to/folder/containing/ffmpeg_an
 ## Other options
 
 - `--locales-path` Customise path to locales (useful for [translators](translation.md)).
-- `--disable-networking` Make app completely offline (see [#1418](https://github.com/mifi/lossless-cut/issues/1418)).
+- `--enable-networking` Allow the app to make network connections (opening help links in the browser, downloading media from a URL). Networking is **disabled by default**.
+- `--disable-networking` Make app completely offline (see [#1418](https://github.com/mifi/lossless-cut/issues/1418)). This is now the default, and takes precedence over `--enable-networking`.
 - `--http-api` Start the [HTTP server with an API](api.md) to control LosslessCut, optionally specifying a port (default `8080`).
 - `--keyboard-action` Run a keyboard action (see below.)
 - `--config-dir` Path to a directory where the `config.json` file will be stored and loaded from. Note: don't include `config.json` in the path (only the directory containing it).
