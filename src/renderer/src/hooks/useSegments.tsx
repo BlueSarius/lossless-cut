@@ -1,6 +1,5 @@
 import type { MutableRefObject, FormEvent } from 'react';
 import { useCallback, useRef, useMemo, useState, useEffect } from 'react';
-import { useStateWithHistory } from 'react-use/lib/useStateWithHistory';
 import i18n from 'i18next';
 import pMap from 'p-map';
 import invariant from 'tiny-invariant';
@@ -25,6 +24,8 @@ import type { HandleError } from '../contexts';
 import type { ShowGenericDialog } from '../components/GenericDialog';
 import { useGenericDialogContext } from '../components/GenericDialog';
 import ExpressionDialog from '../components/ExpressionDialog';
+import useStateWithHistory from './useStateWithHistory';
+import type { SetStateWithHistoryOptions } from '../util/history';
 import Button, { DialogButton } from '../components/Button';
 import { ButtonRow } from '../components/Dialog';
 import * as Dialog from '../components/Dialog';
@@ -87,7 +88,7 @@ function useSegments({ filePath, workingRef, setWorking, setProgress, videoStrea
     return addSegmentColorIndex(createSegment(segment), segColorCounterRef.current);
   }, [setSegColorCounter]);
 
-  const [cutSegments, setCutSegments, cutSegmentsHistory] = useStateWithHistory<StateSegment[], StateSegment[]>(
+  const [cutSegments, setCutSegments, cutSegmentsHistory] = useStateWithHistory<StateSegment[]>(
     [],
     100,
   );
@@ -113,7 +114,7 @@ function useSegments({ filePath, workingRef, setWorking, setProgress, videoStrea
     setSegColorCounter(0);
   }, [setSegColorCounter]);
 
-  const safeSetCutSegments = useCallback((newSegmentsOrFn: StateSegment[] | ((a: StateSegment[]) => StateSegment[]), clampDuration?: number) => {
+  const safeSetCutSegments = useCallback((newSegmentsOrFn: StateSegment[] | ((a: StateSegment[]) => StateSegment[]), clampDuration?: number, historyOptions?: SetStateWithHistoryOptions) => {
     function clampValue(val: number | undefined) {
       if (val == null || Number.isNaN(val)) return undefined;
       const clamped = Math.max(val, 0);
@@ -143,11 +144,11 @@ function useSegments({ filePath, workingRef, setWorking, setProgress, videoStrea
     });
 
     if (typeof newSegmentsOrFn === 'function') {
-      setCutSegments((existing) => map(newSegmentsOrFn(existing)));
+      setCutSegments((existing) => map(newSegmentsOrFn(existing)), historyOptions);
       return;
     }
 
-    setCutSegments(map(newSegmentsOrFn));
+    setCutSegments(map(newSegmentsOrFn), historyOptions);
   }, [setCutSegments]);
 
   const clearSegments = useCallback(() => {
@@ -448,16 +449,16 @@ function useSegments({ filePath, workingRef, setWorking, setProgress, videoStrea
     safeSetCutSegments((existingSegments) => combineSelectedSegments2(existingSegments));
   }, [safeSetCutSegments]);
 
-  const updateSegAtIndex = useCallback<UpdateSegAtIndex>((index, newProps) => {
+  const updateSegAtIndex = useCallback<UpdateSegAtIndex>((index, newProps, historyOptions) => {
     if (index < 0) return;
     const cutSegmentsNew = [...cutSegments];
     const existing = cutSegments[index];
     invariant(existing != null);
     cutSegmentsNew.splice(index, 1, { ...existing, ...newProps });
-    safeSetCutSegments(cutSegmentsNew, fileDuration);
+    safeSetCutSegments(cutSegmentsNew, fileDuration, historyOptions);
   }, [cutSegments, safeSetCutSegments, fileDuration]);
 
-  const setCutTime = useCallback((type: 'start' | 'end' | 'move', time: number | undefined) => {
+  const setCutTime = useCallback((type: 'start' | 'end' | 'move', time: number | undefined, historyOptions?: SetStateWithHistoryOptions) => {
     if (!isDurationValid(fileDuration) || currentCutSeg == null) return;
 
     const clampStart = (start: number) => Math.min(Math.max(start, 0), fileDuration);
@@ -468,20 +469,20 @@ function useSegments({ filePath, workingRef, setWorking, setProgress, videoStrea
       if (currentCutSeg.end != null && time >= currentCutSeg.end) {
         throw new UserFacingError(i18n.t('Segment start time must precede end time'));
       }
-      updateSegAtIndex(currentSegIndexSafe, { start: clampStart(time) });
+      updateSegAtIndex(currentSegIndexSafe, { start: clampStart(time) }, historyOptions);
     }
     if (type === 'end') {
       if (time != null && time <= currentCutSeg.start) {
         throw new UserFacingError(i18n.t('Segment start time must precede end time'));
       }
-      updateSegAtIndex(currentSegIndexSafe, { end: clampEnd(time) });
+      updateSegAtIndex(currentSegIndexSafe, { end: clampEnd(time) }, historyOptions);
     }
     if (type === 'move') {
       invariant(time != null);
       updateSegAtIndex(currentSegIndexSafe, {
         start: clampStart(time),
         ...(currentCutSeg.end != null && { end: clampEnd(time + (currentCutSeg.end - currentCutSeg.start)) }),
-      });
+      }, historyOptions);
     }
   }, [currentSegIndexSafe, currentCutSeg, fileDuration, updateSegAtIndex]);
 

@@ -312,6 +312,9 @@ function Timeline({
 
     mouseDownRef.current = e.target;
 
+    // the whole drag should be one undo step
+    const historyOptions = { coalesceKey: `timeline-drag-${e.timeStamp}` };
+
     function onMouseMove(e2: MouseEvent) {
       if (mouseDownRef.current == null) return;
       const mouseDragTimelinePos = getMouseTimelinePos(e2);
@@ -319,11 +322,11 @@ function Timeline({
       try {
         // eslint-disable-next-line unicorn/prefer-switch
         if (resizingSegmentRef.current?.operation === 'start') {
-          setCutTime('start', mouseDragTimelinePos);
+          setCutTime('start', mouseDragTimelinePos, historyOptions);
         } else if (resizingSegmentRef?.current?.operation === 'end') {
-          setCutTime('end', mouseDragTimelinePos);
+          setCutTime('end', mouseDragTimelinePos, historyOptions);
         } else if (resizingSegmentRef?.current?.operation === 'move') {
-          setCutTime('move', mouseDragTimelinePos - (resizingSegmentRef.current.offset ?? 0));
+          setCutTime('move', mouseDragTimelinePos - (resizingSegmentRef.current.offset ?? 0), historyOptions);
         }
       } catch (err) {
         console.warn('Error while resizing segment:', err instanceof Error ? err.message : err);

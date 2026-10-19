@@ -669,8 +669,7 @@ function App() {
     playingRef.current = false;
     setPlaybackMode(undefined);
     setFileDuration(undefined);
-    cutSegmentsHistory.history[0] = []; // in case we have exceeded capacity
-    cutSegmentsHistory.go(0);
+    cutSegmentsHistory.reset([]);
     setDetectedFileFormat(undefined);
     setRotation(360);
     setProgress(undefined);
