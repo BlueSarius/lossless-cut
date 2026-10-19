@@ -84,7 +84,9 @@ import {
   getOutFileExtension,
   getSuffixedOutPath,
   calculateTimelinePercent,
+  isMac,
 } from './util';
+import { getUndoRedoAccelerators, localizeUndoRedoKeyBindings } from './util/keyBindings';
 import getSwal, { errorToast, showPlaybackFailedMessage } from './swal';
 import { adjustRate } from './util/rate-calculator';
 import { askExtractFramesAsImages } from './dialogs/extractFrames';
@@ -2217,6 +2219,17 @@ function App() {
   }, []);
 
   const { keyboardLayoutMap, updateKeyboardLayout } = useKeyboard({ keyBindings, keyUpActions, getKeyboardAction, closeExportConfirm, exportConfirmOpen });
+
+  useEffect(() => {
+    if (keyboardLayoutMap == null) return;
+    const localizedKeyBindings = localizeUndoRedoKeyBindings(keyBindings, keyboardLayoutMap);
+    if (localizedKeyBindings !== keyBindings) setKeyBindings(localizedKeyBindings);
+  }, [keyBindings, keyboardLayoutMap, setKeyBindings]);
+
+  useEffect(() => {
+    if (keyboardLayoutMap == null) return;
+    ipcRenderer.send('setUndoRedoAccelerators', getUndoRedoAccelerators(keyBindings, keyboardLayoutMap, isMac));
+  }, [keyBindings, keyboardLayoutMap]);
 
   useEffect(() => {
     // eslint-disable-next-line unicorn/prefer-add-event-listener

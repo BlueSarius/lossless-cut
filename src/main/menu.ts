@@ -14,12 +14,26 @@ const esc = (val: string) => val.replaceAll('&', '&&');
 
 const { Menu } = electron;
 
-export default ({ app, mainWindow, isStoreBuild, openExternal }: {
+export interface UndoRedoAccelerators {
+  undo?: string | undefined,
+  redo?: string | undefined,
+}
+
+export default ({ app, mainWindow, isStoreBuild, openExternal, undoRedoAccelerators }: {
   app: Electron.App,
   mainWindow: BrowserWindow,
   isStoreBuild: boolean,
   openExternal: (url: string) => void,
+  undoRedoAccelerators: UndoRedoAccelerators,
 }) => {
+  // The accelerators come from the user's undo/redo key bindings. On Windows/Linux they are only displayed,
+  // because the renderer handles the key bindings, and text fields handle undo natively.
+  // On macOS they cannot be display-only (and are needed for undo in text fields), so don't use a single key without a modifier.
+  const getUndoRedoAccelerator = (accelerator: string | undefined) => {
+    if (accelerator == null || (process.platform === 'darwin' && !accelerator.includes('+'))) return {};
+    return { accelerator, registerAccelerator: false };
+  };
+
   // todo TS mainWindow.webContents.send
   const menu: (MenuItemConstructorOptions | MenuItem)[] = [
     ...(process.platform === 'darwin' ? [{ role: 'appMenu' as const }] : []),
@@ -244,7 +258,7 @@ export default ({ app, mainWindow, isStoreBuild, openExternal }: {
         // only do native undo/redo (for text fields), like `role: 'undo'` does.
         {
           label: esc(t('Undo')),
-          accelerator: 'CommandOrControl+Z',
+          ...getUndoRedoAccelerator(undoRedoAccelerators.undo),
           click(_menuItem, _window, event) {
             if (event.triggeredByAccelerator) mainWindow.webContents.undo();
             else mainWindow.webContents.send('menuUndo');
@@ -252,7 +266,7 @@ export default ({ app, mainWindow, isStoreBuild, openExternal }: {
         },
         {
           label: esc(t('Redo')),
-          accelerator: process.platform === 'win32' ? 'Control+Y' : 'Shift+CommandOrControl+Z',
+          ...getUndoRedoAccelerator(undoRedoAccelerators.redo),
           click(_menuItem, _window, event) {
             if (event.triggeredByAccelerator) mainWindow.webContents.redo();
             else mainWindow.webContents.send('menuRedo');
