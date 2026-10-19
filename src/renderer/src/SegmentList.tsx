@@ -392,6 +392,18 @@ function SegmentList({
 
   const segmentsTotal = useMemo(() => selectedSegments.reduce((acc, seg) => (seg.end == null ? 0 : seg.end - seg.start) + acc, 0), [selectedSegments]);
 
+  const segmentsTotalEstimatedSize = useMemo(() => {
+    let total = 0;
+    for (const seg of selectedSegments) {
+      if (seg.end != null) {
+        const size = getSegEstimatedSize(seg);
+        if (size == null) return undefined;
+        total += size;
+      }
+    }
+    return total;
+  }, [getSegEstimatedSize, selectedSegments]);
+
   const segmentsOrInverse: (InverseCutSegment | StateSegment)[] = invertCutSegments ? inverseCutSegments : cutSegments;
 
   const sortableList = useMemo(() => segmentsOrInverse.map((seg) => ({ id: seg.segId, seg })), [segmentsOrInverse]);
@@ -497,6 +509,13 @@ function SegmentList({
           <div>{t('Segments total:')}</div>
           <div>{formatTimecode({ seconds: segmentsTotal })}</div>
         </div>
+
+        {segmentsTotalEstimatedSize != null && (
+          <div style={{ padding: '5px 10px', boxSizing: 'border-box', borderBottom: '1px solid var(--gray-6)', display: 'flex', justifyContent: 'space-between', fontSize: '.8em' }}>
+            <div>{t('Estimated output size:')}</div>
+            <div>~{prettyBytes(segmentsTotalEstimatedSize, { space: false, maximumFractionDigits: 1, minimumFractionDigits: 0 })}</div>
+          </div>
+        )}
       </>
     );
   }
