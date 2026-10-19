@@ -239,8 +239,25 @@ export default ({ app, mainWindow, isStoreBuild, openExternal }: {
       submenu: [
         // https://github.com/mifi/lossless-cut/issues/610
         // https://github.com/mifi/lossless-cut/issues/1183
-        { role: 'undo', label: esc(t('Undo')) },
-        { role: 'redo', label: esc(t('Redo')) },
+        // When clicked in the menu, undo/redo segments (or text, if a text field is focused).
+        // Keyboard shortcuts for segment undo/redo are handled by the renderer, so when triggered by the accelerator,
+        // only do native undo/redo (for text fields), like `role: 'undo'` does.
+        {
+          label: esc(t('Undo')),
+          accelerator: 'CommandOrControl+Z',
+          click(_menuItem, _window, event) {
+            if (event.triggeredByAccelerator) mainWindow.webContents.undo();
+            else mainWindow.webContents.send('menuUndo');
+          },
+        },
+        {
+          label: esc(t('Redo')),
+          accelerator: process.platform === 'win32' ? 'Control+Y' : 'Shift+CommandOrControl+Z',
+          click(_menuItem, _window, event) {
+            if (event.triggeredByAccelerator) mainWindow.webContents.redo();
+            else mainWindow.webContents.send('menuRedo');
+          },
+        },
         { type: 'separator' },
         { role: 'cut', label: esc(t('Cut')) },
         { role: 'copy', label: esc(t('Copy')) },

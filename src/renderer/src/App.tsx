@@ -2354,7 +2354,25 @@ function App() {
       }
     }
 
+    const isTextFieldFocused = () => {
+      const el = document.activeElement;
+      if (el instanceof HTMLTextAreaElement || (el instanceof HTMLElement && el.isContentEditable)) return true;
+      return el instanceof HTMLInputElement && ['text', 'search', 'url', 'tel', 'password', 'email', 'number'].includes(el.type);
+    };
+
+    // Edit menu undo/redo: undo the text being edited, otherwise the segments
+    const menuUndoRedo = (type: 'undo' | 'redo') => {
+      if (isTextFieldFocused()) {
+        document.execCommand(type);
+        return;
+      }
+      if (type === 'undo') cutSegmentsHistory.back();
+      else cutSegmentsHistory.forward();
+    };
+
     const allActions = [
+      ['menuUndo', async () => menuUndoRedo('undo')] as const,
+      ['menuRedo', async () => menuUndoRedo('redo')] as const,
       // actions with arguments:
       [
         'openFiles',
@@ -2422,7 +2440,7 @@ function App() {
       ipcActions.forEach(([key, action]) => ipcRenderer.off(key, action));
       ipcRenderer.off('apiAction', tryApiAction);
     };
-  }, [checkFileOpened, customOutDir, detectedFps, filePath, getFrameCount, getKeyboardAction, goToTimecodeDirect, handleError, importEdlFile, loadCutSegments, mainActions, promptDownloadMediaUrlWrapper, selectedSegments, toggleKeyboardShortcuts, tryExportEdlFile, userOpenFiles]);
+  }, [checkFileOpened, customOutDir, cutSegmentsHistory, detectedFps, filePath, getFrameCount, getKeyboardAction, goToTimecodeDirect, handleError, importEdlFile, loadCutSegments, mainActions, promptDownloadMediaUrlWrapper, selectedSegments, toggleKeyboardShortcuts, tryExportEdlFile, userOpenFiles]);
 
   const handleBatchFilesDrop = useCallback<DragEventHandler<HTMLDivElement>>(async (ev) => {
     ev.preventDefault();
