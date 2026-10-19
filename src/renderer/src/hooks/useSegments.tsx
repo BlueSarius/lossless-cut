@@ -43,6 +43,9 @@ type ParameterDialogParameters = Record<string, string>;
 
 const offsetSegments = (segments: DefiniteSegmentBase[], offset: number) => segments.map((s) => ({ start: s.start + offset, end: s.end + offset }));
 
+// selecting segments is not an action that should be undoable
+const noHistory = { recordHistory: false };
+
 function useSegments({ filePath, workingRef, setWorking, setProgress, videoStream, fileDuration, getRelevantTime, maxLabelLength, checkFileOpened, invertCutSegments, segmentsToChaptersOnly, timecodePlaceholder, parseTimecode, appendFfmpegCommandLog, fileDurationNonZero, mainFileMeta, seekAbs, activeVideoStreamIndex, activeAudioStreamIndexes, handleError, showGenericDialog, simpleMode, ffmpegHwaccel }: {
   filePath?: string | undefined,
   workingRef: MutableRefObject<boolean>,
@@ -656,7 +659,7 @@ function useSegments({ filePath, workingRef, setWorking, setProgress, videoStrea
     setCutSegments((existing) => existing.map(({ selected, ...segment }) => ({
       ...segment,
       selected: selected || segIdsToSelect.has(segment.segId),
-    })));
+    })), noHistory);
   }, [setCutSegments]);
 
   const findSegmentsAtCursor = useCallback((currentTime: number) => (
@@ -939,16 +942,16 @@ function useSegments({ filePath, workingRef, setWorking, setProgress, videoStrea
 
   const selectOnlySegment = useCallback((seg: Pick<StateSegment, 'segId'>) => setCutSegments((existing) => existing.map((segment) => ({
     ...segment, selected: segment.segId === seg.segId,
-  }))), [setCutSegments]);
+  })), noHistory), [setCutSegments]);
 
   const toggleSegmentSelected = useCallback((seg: Pick<StateSegment, 'segId'>) => setCutSegments((existing) => existing.map((segment) => {
     if (segment.segId !== seg.segId) return segment;
     return { ...segment, selected: !segment.selected };
-  })), [setCutSegments]);
+  }), noHistory), [setCutSegments]);
 
-  const deselectAllSegments = useCallback(() => setCutSegments((existing) => existing.map((segment) => ({ ...segment, selected: false }))), [setCutSegments]);
-  const selectAllSegments = useCallback(() => setCutSegments((existing) => existing.map((segment) => ({ ...segment, selected: true }))), [setCutSegments]);
-  const invertSelectedSegments = useCallback(() => setCutSegments((existing) => existing.map((segment) => ({ ...segment, selected: !segment.selected }))), [setCutSegments]);
+  const deselectAllSegments = useCallback(() => setCutSegments((existing) => existing.map((segment) => ({ ...segment, selected: false })), noHistory), [setCutSegments]);
+  const selectAllSegments = useCallback(() => setCutSegments((existing) => existing.map((segment) => ({ ...segment, selected: true })), noHistory), [setCutSegments]);
+  const invertSelectedSegments = useCallback(() => setCutSegments((existing) => existing.map((segment) => ({ ...segment, selected: !segment.selected })), noHistory), [setCutSegments]);
 
   const selectOnlyCurrentSegment = useCallback(() => {
     if (currentCutSeg == null) return;

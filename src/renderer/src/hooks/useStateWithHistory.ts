@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useState } from 'react';
 
 import type { SetStateWithHistoryOptions } from '../util/history';
-import { createHistory, getCurrentState, pushHistory, redoHistory, undoHistory } from '../util/history';
+import { createHistory, getCurrentState, pushHistory, redoHistory, replaceCurrentHistory, undoHistory } from '../util/history';
 
 
 export type SetStateWithHistory<T> = (newStateOrFn: T | ((existing: T) => T), options?: SetStateWithHistoryOptions) => void;
@@ -9,9 +9,10 @@ export type SetStateWithHistory<T> = (newStateOrFn: T | ((existing: T) => T), op
 export default function useStateWithHistory<T>(initialState: T, capacity: number) {
   const [history, setHistory] = useState(() => createHistory(initialState));
 
-  const setState = useCallback<SetStateWithHistory<T>>((newStateOrFn, { coalesceKey } = {}) => {
+  const setState = useCallback<SetStateWithHistory<T>>((newStateOrFn, { coalesceKey, recordHistory = true } = {}) => {
     setHistory((existing) => {
       const newState = typeof newStateOrFn === 'function' ? (newStateOrFn as (a: T) => T)(getCurrentState(existing)) : newStateOrFn;
+      if (!recordHistory) return replaceCurrentHistory(existing, newState);
       return pushHistory(existing, newState, capacity, coalesceKey);
     });
   }, [capacity]);

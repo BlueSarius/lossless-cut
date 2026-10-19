@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 
-import { createHistory, getCurrentState, pushHistory, redoHistory, undoHistory } from './history';
+import { createHistory, getCurrentState, pushHistory, redoHistory, replaceCurrentHistory, undoHistory } from './history';
 
 const pushAll = (states: string[], capacity: number) => states.reduce((h, s) => pushHistory(h, s, capacity), createHistory('s0'));
 
@@ -52,6 +52,18 @@ describe('history', () => {
     // a different key starts a new step
     h = pushHistory(h, 'other', 10, 'b');
     expect(h.entries).toEqual(['s0', 's1', 'drag3', 'other']);
+  });
+
+  it('replaces the current entry without creating an undo step', () => {
+    let h = pushAll(['s1', 's2'], 10);
+    h = replaceCurrentHistory(h, 's2-selected');
+    expect(h.entries).toEqual(['s0', 's1', 's2-selected']);
+    expect(getCurrentState(undoHistory(h))).toBe('s1');
+
+    // keeps redo entries
+    h = replaceCurrentHistory(undoHistory(h), 's1-selected');
+    expect(h.entries).toEqual(['s0', 's1-selected', 's2-selected']);
+    expect(getCurrentState(redoHistory(h))).toBe('s2-selected');
   });
 
   it('does not coalesce into an entry reached by undo', () => {

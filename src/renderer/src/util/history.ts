@@ -12,6 +12,8 @@ export interface History<T> {
 export interface SetStateWithHistoryOptions {
   // Successive updates with the same key are merged into a single undo step (e.g. while dragging)
   coalesceKey?: string | undefined,
+  // false: update the current entry instead of creating an undo step (e.g. for selection changes)
+  recordHistory?: boolean | undefined,
 }
 
 export function createHistory<T>(initialState: T): History<T> {
@@ -36,6 +38,14 @@ export function pushHistory<T>(history: History<T>, newState: T, capacity: numbe
   let entries = [...history.entries.slice(0, history.position + 1), newState];
   if (entries.length > capacity) entries = entries.slice(entries.length - capacity);
   return { entries, position: entries.length - 1, coalesceKey };
+}
+
+// Update the current entry without creating an undo step. Redo entries are kept.
+export function replaceCurrentHistory<T>(history: History<T>, newState: T): History<T> {
+  if (newState === getCurrentState(history)) return history;
+  const entries = [...history.entries];
+  entries[history.position] = newState;
+  return { ...history, entries };
 }
 
 export function undoHistory<T>(history: History<T>): History<T> {
