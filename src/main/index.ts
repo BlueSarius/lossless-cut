@@ -23,6 +23,7 @@ import mitt from 'mitt';
 
 import logger from './logger.js';
 import menu from './menu.js';
+import type { UndoRedoAccelerators } from './menu.js';
 import * as configStore from './configStore.js';
 import { isLinux, isWindows, isMac, platform, arch, pathExists } from './util.js';
 import { appName } from './common.js';
@@ -224,9 +225,12 @@ async function openExternal(url: string) {
   await shell.openExternal(url);
 }
 
+// sent by the renderer, because they depend on the key bindings and the keyboard layout
+let undoRedoAccelerators: UndoRedoAccelerators = {};
+
 function updateMenu() {
   assert(mainWindow);
-  menu({ app, mainWindow, isStoreBuild, openExternal });
+  menu({ app, mainWindow, isStoreBuild, openExternal, undoRedoAccelerators });
 }
 
 async function changeLanguage(language: string | null) {
@@ -352,6 +356,11 @@ async function init() {
     });
 
     ipcMain.on('setLanguage', (_e, newLanguage) => changeLanguage(newLanguage));
+
+    ipcMain.on('setUndoRedoAccelerators', (_e, newAccelerators) => {
+      undoRedoAccelerators = z.object({ undo: z.string().optional(), redo: z.string().optional() }).parse(newAccelerators);
+      updateMenu();
+    });
 
     ipcMain.handle('tryTrashItem', async (_e, path) => {
       try {

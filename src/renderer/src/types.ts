@@ -2,6 +2,7 @@ import type { MenuItem, MenuItemConstructorOptions } from 'electron';
 import { z } from 'zod';
 import type { FFprobeChapter, FFprobeFormat, FFprobeStream } from '../../common/ffprobe';
 import type { FileStream } from './ffmpeg';
+import type { SetStateWithHistoryOptions } from './util/history';
 
 
 export interface ChromiumHTMLVideoElement extends HTMLVideoElement {
@@ -126,7 +127,7 @@ export type ParseTimecode = (val: string) => number | undefined;
 
 export type GetFrameCount = (sec: number) => number | undefined;
 
-export type UpdateSegAtIndex = (index: number, newProps: Partial<StateSegment>) => void;
+export type UpdateSegAtIndex = (index: number, newProps: Partial<StateSegment>, historyOptions?: SetStateWithHistoryOptions) => void;
 
 export type ContextMenuTemplate = (MenuItemConstructorOptions | MenuItem)[];
 

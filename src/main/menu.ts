@@ -14,12 +14,26 @@ const esc = (val: string) => val.replaceAll('&', '&&');
 
 const { Menu } = electron;
 
-export default ({ app, mainWindow, isStoreBuild, openExternal }: {
+export interface UndoRedoAccelerators {
+  undo?: string | undefined,
+  redo?: string | undefined,
+}
+
+export default ({ app, mainWindow, isStoreBuild, openExternal, undoRedoAccelerators }: {
   app: Electron.App,
   mainWindow: BrowserWindow,
   isStoreBuild: boolean,
   openExternal: (url: string) => void,
+  undoRedoAccelerators: UndoRedoAccelerators,
 }) => {
+  // The accelerators come from the user's undo/redo key bindings. On Windows/Linux they are only displayed,
+  // because the renderer handles the key bindings, and text fields handle undo natively.
+  // On macOS they cannot be display-only (and are needed for undo in text fields), so don't use a single key without a modifier.
+  const getUndoRedoAccelerator = (accelerator: string | undefined) => {
+    if (accelerator == null || (process.platform === 'darwin' && !accelerator.includes('+'))) return {};
+    return { accelerator, registerAccelerator: false };
+  };
+
   // todo TS mainWindow.webContents.send
   const menu: (MenuItemConstructorOptions | MenuItem)[] = [
     ...(process.platform === 'darwin' ? [{ role: 'appMenu' as const }] : []),
@@ -239,8 +253,25 @@ export default ({ app, mainWindow, isStoreBuild, openExternal }: {
       submenu: [
         // https://github.com/mifi/lossless-cut/issues/610
         // https://github.com/mifi/lossless-cut/issues/1183
-        { role: 'undo', label: esc(t('Undo')) },
-        { role: 'redo', label: esc(t('Redo')) },
+        // When clicked in the menu, undo/redo segments (or text, if a text field is focused).
+        // Keyboard shortcuts for segment undo/redo are handled by the renderer, so when triggered by the accelerator,
+        // only do native undo/redo (for text fields), like `role: 'undo'` does.
+        {
+          label: esc(t('Undo')),
+          ...getUndoRedoAccelerator(undoRedoAccelerators.undo),
+          click(_menuItem, _window, event) {
+            if (event.triggeredByAccelerator) mainWindow.webContents.undo();
+            else mainWindow.webContents.send('menuUndo');
+          },
+        },
+        {
+          label: esc(t('Redo')),
+          ...getUndoRedoAccelerator(undoRedoAccelerators.redo),
+          click(_menuItem, _window, event) {
+            if (event.triggeredByAccelerator) mainWindow.webContents.redo();
+            else mainWindow.webContents.send('menuRedo');
+          },
+        },
         { type: 'separator' },
         { role: 'cut', label: esc(t('Cut')) },
         { role: 'copy', label: esc(t('Copy')) },

@@ -1,6 +1,5 @@
 import type { MutableRefObject, FormEvent } from 'react';
 import { useCallback, useRef, useMemo, useState, useEffect } from 'react';
-import { useStateWithHistory } from 'react-use/lib/useStateWithHistory';
 import i18n from 'i18next';
 import pMap from 'p-map';
 import invariant from 'tiny-invariant';
@@ -25,6 +24,8 @@ import type { HandleError } from '../contexts';
 import type { ShowGenericDialog } from '../components/GenericDialog';
 import { useGenericDialogContext } from '../components/GenericDialog';
 import ExpressionDialog from '../components/ExpressionDialog';
+import useStateWithHistory from './useStateWithHistory';
+import type { SetStateWithHistoryOptions } from '../util/history';
 import Button, { DialogButton } from '../components/Button';
 import { ButtonRow } from '../components/Dialog';
 import * as Dialog from '../components/Dialog';
@@ -41,6 +42,9 @@ const { ffmpeg: { blackDetect, silenceDetect } } = remote.require('./index.js');
 type ParameterDialogParameters = Record<string, string>;
 
 const offsetSegments = (segments: DefiniteSegmentBase[], offset: number) => segments.map((s) => ({ start: s.start + offset, end: s.end + offset }));
+
+// selecting segments is not an action that should be undoable
+const noHistory = { recordHistory: false };
 
 function useSegments({ filePath, workingRef, setWorking, setProgress, videoStream, fileDuration, getRelevantTime, maxLabelLength, checkFileOpened, invertCutSegments, segmentsToChaptersOnly, timecodePlaceholder, parseTimecode, appendFfmpegCommandLog, fileDurationNonZero, mainFileMeta, seekAbs, activeVideoStreamIndex, activeAudioStreamIndexes, handleError, showGenericDialog, simpleMode, ffmpegHwaccel }: {
   filePath?: string | undefined,
@@ -87,7 +91,7 @@ function useSegments({ filePath, workingRef, setWorking, setProgress, videoStrea
     return addSegmentColorIndex(createSegment(segment), segColorCounterRef.current);
   }, [setSegColorCounter]);
 
-  const [cutSegments, setCutSegments, cutSegmentsHistory] = useStateWithHistory<StateSegment[], StateSegment[]>(
+  const [cutSegments, setCutSegments, cutSegmentsHistory] = useStateWithHistory<StateSegment[]>(
     [],
     100,
   );
@@ -113,7 +117,7 @@ function useSegments({ filePath, workingRef, setWorking, setProgress, videoStrea
     setSegColorCounter(0);
   }, [setSegColorCounter]);
 
-  const safeSetCutSegments = useCallback((newSegmentsOrFn: StateSegment[] | ((a: StateSegment[]) => StateSegment[]), clampDuration?: number) => {
+  const safeSetCutSegments = useCallback((newSegmentsOrFn: StateSegment[] | ((a: StateSegment[]) => StateSegment[]), clampDuration?: number, historyOptions?: SetStateWithHistoryOptions) => {
     function clampValue(val: number | undefined) {
       if (val == null || Number.isNaN(val)) return undefined;
       const clamped = Math.max(val, 0);
@@ -143,11 +147,11 @@ function useSegments({ filePath, workingRef, setWorking, setProgress, videoStrea
     });
 
     if (typeof newSegmentsOrFn === 'function') {
-      setCutSegments((existing) => map(newSegmentsOrFn(existing)));
+      setCutSegments((existing) => map(newSegmentsOrFn(existing)), historyOptions);
       return;
     }
 
-    setCutSegments(map(newSegmentsOrFn));
+    setCutSegments(map(newSegmentsOrFn), historyOptions);
   }, [setCutSegments]);
 
   const clearSegments = useCallback(() => {
@@ -448,16 +452,16 @@ function useSegments({ filePath, workingRef, setWorking, setProgress, videoStrea
     safeSetCutSegments((existingSegments) => combineSelectedSegments2(existingSegments));
   }, [safeSetCutSegments]);
 
-  const updateSegAtIndex = useCallback<UpdateSegAtIndex>((index, newProps) => {
+  const updateSegAtIndex = useCallback<UpdateSegAtIndex>((index, newProps, historyOptions) => {
     if (index < 0) return;
     const cutSegmentsNew = [...cutSegments];
     const existing = cutSegments[index];
     invariant(existing != null);
     cutSegmentsNew.splice(index, 1, { ...existing, ...newProps });
-    safeSetCutSegments(cutSegmentsNew, fileDuration);
+    safeSetCutSegments(cutSegmentsNew, fileDuration, historyOptions);
   }, [cutSegments, safeSetCutSegments, fileDuration]);
 
-  const setCutTime = useCallback((type: 'start' | 'end' | 'move', time: number | undefined) => {
+  const setCutTime = useCallback((type: 'start' | 'end' | 'move', time: number | undefined, historyOptions?: SetStateWithHistoryOptions) => {
     if (!isDurationValid(fileDuration) || currentCutSeg == null) return;
 
     const clampStart = (start: number) => Math.min(Math.max(start, 0), fileDuration);
@@ -468,20 +472,20 @@ function useSegments({ filePath, workingRef, setWorking, setProgress, videoStrea
       if (currentCutSeg.end != null && time >= currentCutSeg.end) {
         throw new UserFacingError(i18n.t('Segment start time must precede end time'));
       }
-      updateSegAtIndex(currentSegIndexSafe, { start: clampStart(time) });
+      updateSegAtIndex(currentSegIndexSafe, { start: clampStart(time) }, historyOptions);
     }
     if (type === 'end') {
       if (time != null && time <= currentCutSeg.start) {
         throw new UserFacingError(i18n.t('Segment start time must precede end time'));
       }
-      updateSegAtIndex(currentSegIndexSafe, { end: clampEnd(time) });
+      updateSegAtIndex(currentSegIndexSafe, { end: clampEnd(time) }, historyOptions);
     }
     if (type === 'move') {
       invariant(time != null);
       updateSegAtIndex(currentSegIndexSafe, {
         start: clampStart(time),
         ...(currentCutSeg.end != null && { end: clampEnd(time + (currentCutSeg.end - currentCutSeg.start)) }),
-      });
+      }, historyOptions);
     }
   }, [currentSegIndexSafe, currentCutSeg, fileDuration, updateSegAtIndex]);
 
@@ -655,7 +659,7 @@ function useSegments({ filePath, workingRef, setWorking, setProgress, videoStrea
     setCutSegments((existing) => existing.map(({ selected, ...segment }) => ({
       ...segment,
       selected: selected || segIdsToSelect.has(segment.segId),
-    })));
+    })), noHistory);
   }, [setCutSegments]);
 
   const findSegmentsAtCursor = useCallback((currentTime: number) => (
@@ -938,16 +942,16 @@ function useSegments({ filePath, workingRef, setWorking, setProgress, videoStrea
 
   const selectOnlySegment = useCallback((seg: Pick<StateSegment, 'segId'>) => setCutSegments((existing) => existing.map((segment) => ({
     ...segment, selected: segment.segId === seg.segId,
-  }))), [setCutSegments]);
+  })), noHistory), [setCutSegments]);
 
   const toggleSegmentSelected = useCallback((seg: Pick<StateSegment, 'segId'>) => setCutSegments((existing) => existing.map((segment) => {
     if (segment.segId !== seg.segId) return segment;
     return { ...segment, selected: !segment.selected };
-  })), [setCutSegments]);
+  }), noHistory), [setCutSegments]);
 
-  const deselectAllSegments = useCallback(() => setCutSegments((existing) => existing.map((segment) => ({ ...segment, selected: false }))), [setCutSegments]);
-  const selectAllSegments = useCallback(() => setCutSegments((existing) => existing.map((segment) => ({ ...segment, selected: true }))), [setCutSegments]);
-  const invertSelectedSegments = useCallback(() => setCutSegments((existing) => existing.map((segment) => ({ ...segment, selected: !segment.selected }))), [setCutSegments]);
+  const deselectAllSegments = useCallback(() => setCutSegments((existing) => existing.map((segment) => ({ ...segment, selected: false })), noHistory), [setCutSegments]);
+  const selectAllSegments = useCallback(() => setCutSegments((existing) => existing.map((segment) => ({ ...segment, selected: true })), noHistory), [setCutSegments]);
+  const invertSelectedSegments = useCallback(() => setCutSegments((existing) => existing.map((segment) => ({ ...segment, selected: !segment.selected })), noHistory), [setCutSegments]);
 
   const selectOnlyCurrentSegment = useCallback(() => {
     if (currentCutSeg == null) return;
