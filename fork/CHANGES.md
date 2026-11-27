@@ -21,6 +21,7 @@ How to sync: see [`SYNC.md`](SYNC.md). Each change has a folder in `changes/` wi
 | [05-undo-fixes](changes/05-undo-fixes/recipe.md) | Undo works when history is full; drag = 1 step; selection not undoable; Edit menu undo | fix | – | active |
 | [06-undo-z-on-any-layout](changes/06-undo-z-on-any-layout/recipe.md) | Undo/redo follow the letter Z (QWERTZ); menu shows real shortcut | preference | 05, 03 | active |
 | [07-keyframe-seek-before-loaded](changes/07-keyframe-seek-before-loaded/recipe.md) | Prev/next keyframe doesn't jump to stale far-away keyframes | fix | – | active |
+| [08-ci-windows-only](changes/08-ci-windows-only/recipe.md) | Test workflow: Windows only, runs once per PR (not per push + PR) | infra | – | active |
 
 Status values: `active` · `needs-rework` (patch is stale; rebuild it from the recipe) · `dropped (<reason / upstream commit>)`.
 To add a new change: create `changes/NN-name/recipe.md`, give its commits a `Fork-Change: NN-name` trailer, and add a row here.
