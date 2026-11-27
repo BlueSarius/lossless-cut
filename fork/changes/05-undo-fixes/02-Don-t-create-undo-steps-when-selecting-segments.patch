@@ -1,0 +1,149 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Mon, 19 Oct 2026 21:56:32 +0000
+Subject: [PATCH] Don't create undo steps when selecting segments
+
+Selecting/deselecting segments is not an edit, so it now updates the
+current history entry instead of adding an undo step. Previously every
+selection change used up an undo step, so Ctrl+Z would undo a selection
+instead of the last actual change.
+
+Fork-Change: 05-undo-fixes
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01WaKzAzqVE95o3kt4D9v1V7
+---
+ src/renderer/src/hooks/useSegments.tsx        | 15 +++++++++------
+ src/renderer/src/hooks/useStateWithHistory.ts |  5 +++--
+ src/renderer/src/util/history.test.ts         | 14 +++++++++++++-
+ src/renderer/src/util/history.ts              | 10 ++++++++++
+ 4 files changed, 35 insertions(+), 9 deletions(-)
+
+diff --git a/src/renderer/src/hooks/useSegments.tsx b/src/renderer/src/hooks/useSegments.tsx
+index 2b041c49..2e8e96ab 100644
+--- a/src/renderer/src/hooks/useSegments.tsx
++++ b/src/renderer/src/hooks/useSegments.tsx
+@@ -43,6 +43,9 @@ type ParameterDialogParameters = Record<string, string>;
+ 
+ const offsetSegments = (segments: DefiniteSegmentBase[], offset: number) => segments.map((s) => ({ start: s.start + offset, end: s.end + offset }));
+ 
++// selecting segments is not an action that should be undoable
++const noHistory = { recordHistory: false };
++
+ function useSegments({ filePath, workingRef, setWorking, setProgress, videoStream, fileDuration, getRelevantTime, maxLabelLength, checkFileOpened, invertCutSegments, segmentsToChaptersOnly, timecodePlaceholder, parseTimecode, appendFfmpegCommandLog, fileDurationNonZero, mainFileMeta, seekAbs, activeVideoStreamIndex, activeAudioStreamIndexes, handleError, showGenericDialog, simpleMode, ffmpegHwaccel }: {
+   filePath?: string | undefined,
+   workingRef: MutableRefObject<boolean>,
+@@ -656,7 +659,7 @@ function useSegments({ filePath, workingRef, setWorking, setProgress, videoStrea
+     setCutSegments((existing) => existing.map(({ selected, ...segment }) => ({
+       ...segment,
+       selected: selected || segIdsToSelect.has(segment.segId),
+-    })));
++    })), noHistory);
+   }, [setCutSegments]);
+ 
+   const findSegmentsAtCursor = useCallback((currentTime: number) => (
+@@ -939,16 +942,16 @@ function useSegments({ filePath, workingRef, setWorking, setProgress, videoStrea
+ 
+   const selectOnlySegment = useCallback((seg: Pick<StateSegment, 'segId'>) => setCutSegments((existing) => existing.map((segment) => ({
+     ...segment, selected: segment.segId === seg.segId,
+-  }))), [setCutSegments]);
++  })), noHistory), [setCutSegments]);
+ 
+   const toggleSegmentSelected = useCallback((seg: Pick<StateSegment, 'segId'>) => setCutSegments((existing) => existing.map((segment) => {
+     if (segment.segId !== seg.segId) return segment;
+     return { ...segment, selected: !segment.selected };
+-  })), [setCutSegments]);
++  }), noHistory), [setCutSegments]);
+ 
+-  const deselectAllSegments = useCallback(() => setCutSegments((existing) => existing.map((segment) => ({ ...segment, selected: false }))), [setCutSegments]);
+-  const selectAllSegments = useCallback(() => setCutSegments((existing) => existing.map((segment) => ({ ...segment, selected: true }))), [setCutSegments]);
+-  const invertSelectedSegments = useCallback(() => setCutSegments((existing) => existing.map((segment) => ({ ...segment, selected: !segment.selected }))), [setCutSegments]);
++  const deselectAllSegments = useCallback(() => setCutSegments((existing) => existing.map((segment) => ({ ...segment, selected: false })), noHistory), [setCutSegments]);
++  const selectAllSegments = useCallback(() => setCutSegments((existing) => existing.map((segment) => ({ ...segment, selected: true })), noHistory), [setCutSegments]);
++  const invertSelectedSegments = useCallback(() => setCutSegments((existing) => existing.map((segment) => ({ ...segment, selected: !segment.selected })), noHistory), [setCutSegments]);
+ 
+   const selectOnlyCurrentSegment = useCallback(() => {
+     if (currentCutSeg == null) return;
+diff --git a/src/renderer/src/hooks/useStateWithHistory.ts b/src/renderer/src/hooks/useStateWithHistory.ts
+index d047787a..108550ca 100644
+--- a/src/renderer/src/hooks/useStateWithHistory.ts
++++ b/src/renderer/src/hooks/useStateWithHistory.ts
+@@ -1,7 +1,7 @@
+ import { useCallback, useMemo, useState } from 'react';
+ 
+ import type { SetStateWithHistoryOptions } from '../util/history';
+-import { createHistory, getCurrentState, pushHistory, redoHistory, undoHistory } from '../util/history';
++import { createHistory, getCurrentState, pushHistory, redoHistory, replaceCurrentHistory, undoHistory } from '../util/history';
+ 
+ 
+ export type SetStateWithHistory<T> = (newStateOrFn: T | ((existing: T) => T), options?: SetStateWithHistoryOptions) => void;
+@@ -9,9 +9,10 @@ export type SetStateWithHistory<T> = (newStateOrFn: T | ((existing: T) => T), op
+ export default function useStateWithHistory<T>(initialState: T, capacity: number) {
+   const [history, setHistory] = useState(() => createHistory(initialState));
+ 
+-  const setState = useCallback<SetStateWithHistory<T>>((newStateOrFn, { coalesceKey } = {}) => {
++  const setState = useCallback<SetStateWithHistory<T>>((newStateOrFn, { coalesceKey, recordHistory = true } = {}) => {
+     setHistory((existing) => {
+       const newState = typeof newStateOrFn === 'function' ? (newStateOrFn as (a: T) => T)(getCurrentState(existing)) : newStateOrFn;
++      if (!recordHistory) return replaceCurrentHistory(existing, newState);
+       return pushHistory(existing, newState, capacity, coalesceKey);
+     });
+   }, [capacity]);
+diff --git a/src/renderer/src/util/history.test.ts b/src/renderer/src/util/history.test.ts
+index 7cec36d2..11de93c1 100644
+--- a/src/renderer/src/util/history.test.ts
++++ b/src/renderer/src/util/history.test.ts
+@@ -1,6 +1,6 @@
+ import { describe, it, expect } from 'vitest';
+ 
+-import { createHistory, getCurrentState, pushHistory, redoHistory, undoHistory } from './history';
++import { createHistory, getCurrentState, pushHistory, redoHistory, replaceCurrentHistory, undoHistory } from './history';
+ 
+ const pushAll = (states: string[], capacity: number) => states.reduce((h, s) => pushHistory(h, s, capacity), createHistory('s0'));
+ 
+@@ -54,6 +54,18 @@ describe('history', () => {
+     expect(h.entries).toEqual(['s0', 's1', 'drag3', 'other']);
+   });
+ 
++  it('replaces the current entry without creating an undo step', () => {
++    let h = pushAll(['s1', 's2'], 10);
++    h = replaceCurrentHistory(h, 's2-selected');
++    expect(h.entries).toEqual(['s0', 's1', 's2-selected']);
++    expect(getCurrentState(undoHistory(h))).toBe('s1');
++
++    // keeps redo entries
++    h = replaceCurrentHistory(undoHistory(h), 's1-selected');
++    expect(h.entries).toEqual(['s0', 's1-selected', 's2-selected']);
++    expect(getCurrentState(redoHistory(h))).toBe('s2-selected');
++  });
++
+   it('does not coalesce into an entry reached by undo', () => {
+     let h = pushHistory(pushAll(['s1'], 10), 'drag1', 10, 'a');
+     h = redoHistory(undoHistory(h));
+diff --git a/src/renderer/src/util/history.ts b/src/renderer/src/util/history.ts
+index eefd948a..b6e1ae4c 100644
+--- a/src/renderer/src/util/history.ts
++++ b/src/renderer/src/util/history.ts
+@@ -12,6 +12,8 @@ export interface History<T> {
+ export interface SetStateWithHistoryOptions {
+   // Successive updates with the same key are merged into a single undo step (e.g. while dragging)
+   coalesceKey?: string | undefined,
++  // false: update the current entry instead of creating an undo step (e.g. for selection changes)
++  recordHistory?: boolean | undefined,
+ }
+ 
+ export function createHistory<T>(initialState: T): History<T> {
+@@ -38,6 +40,14 @@ export function pushHistory<T>(history: History<T>, newState: T, capacity: numbe
+   return { entries, position: entries.length - 1, coalesceKey };
+ }
+ 
++// Update the current entry without creating an undo step. Redo entries are kept.
++export function replaceCurrentHistory<T>(history: History<T>, newState: T): History<T> {
++  if (newState === getCurrentState(history)) return history;
++  const entries = [...history.entries];
++  entries[history.position] = newState;
++  return { ...history, entries };
++}
++
+ export function undoHistory<T>(history: History<T>): History<T> {
+   if (history.position <= 0) return history;
+   return { entries: history.entries, position: history.position - 1 };

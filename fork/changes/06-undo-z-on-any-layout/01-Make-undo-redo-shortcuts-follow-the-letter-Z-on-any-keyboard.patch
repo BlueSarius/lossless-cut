@@ -1,0 +1,332 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Mon, 19 Oct 2026 22:37:20 +0000
+Subject: [PATCH] Make undo/redo shortcuts follow the letter Z on any keyboard
+ layout
+
+Key bindings refer to the physical key position (US layout), so on e.g.
+a German (QWERTZ) keyboard the default undo shortcut was Ctrl + the key
+labeled Y. When the keyboard layout is known, move the default undo/redo
+bindings to the key that has the letter Z. Bindings changed by the user
+are left alone.
+
+The Edit menu's Undo/Redo now show the user's actual undo/redo key
+bindings (display only on Windows/Linux, where the renderer handles the
+keys).
+
+Fork-Change: 06-undo-z-on-any-layout
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01WaKzAzqVE95o3kt4D9v1V7
+---
+ src/main/index.ts                         | 11 ++-
+ src/main/menu.ts                          | 20 ++++-
+ src/renderer/src/App.tsx                  | 13 ++++
+ src/renderer/src/util/keyBindings.test.ts | 76 ++++++++++++++++++
+ src/renderer/src/util/keyBindings.ts      | 95 +++++++++++++++++++++++
+ 5 files changed, 211 insertions(+), 4 deletions(-)
+ create mode 100644 src/renderer/src/util/keyBindings.test.ts
+ create mode 100644 src/renderer/src/util/keyBindings.ts
+
+diff --git a/src/main/index.ts b/src/main/index.ts
+index 86872ae5..492cf067 100644
+--- a/src/main/index.ts
++++ b/src/main/index.ts
+@@ -23,6 +23,7 @@ import mitt from 'mitt';
+ 
+ import logger from './logger.js';
+ import menu from './menu.js';
++import type { UndoRedoAccelerators } from './menu.js';
+ import * as configStore from './configStore.js';
+ import { isLinux, isWindows, isMac, platform, arch, pathExists } from './util.js';
+ import { appName } from './common.js';
+@@ -224,9 +225,12 @@ async function openExternal(url: string) {
+   await shell.openExternal(url);
+ }
+ 
++// sent by the renderer, because they depend on the key bindings and the keyboard layout
++let undoRedoAccelerators: UndoRedoAccelerators = {};
++
+ function updateMenu() {
+   assert(mainWindow);
+-  menu({ app, mainWindow, isStoreBuild, openExternal });
++  menu({ app, mainWindow, isStoreBuild, openExternal, undoRedoAccelerators });
+ }
+ 
+ async function changeLanguage(language: string | null) {
+@@ -353,6 +357,11 @@ async function init() {
+ 
+     ipcMain.on('setLanguage', (_e, newLanguage) => changeLanguage(newLanguage));
+ 
++    ipcMain.on('setUndoRedoAccelerators', (_e, newAccelerators) => {
++      undoRedoAccelerators = z.object({ undo: z.string().optional(), redo: z.string().optional() }).parse(newAccelerators);
++      updateMenu();
++    });
++
+     ipcMain.handle('tryTrashItem', async (_e, path) => {
+       try {
+         await stat(path);
+diff --git a/src/main/menu.ts b/src/main/menu.ts
+index e8a570a0..ae826837 100644
+--- a/src/main/menu.ts
++++ b/src/main/menu.ts
+@@ -14,12 +14,26 @@ const esc = (val: string) => val.replaceAll('&', '&&');
+ 
+ const { Menu } = electron;
+ 
+-export default ({ app, mainWindow, isStoreBuild, openExternal }: {
++export interface UndoRedoAccelerators {
++  undo?: string | undefined,
++  redo?: string | undefined,
++}
++
++export default ({ app, mainWindow, isStoreBuild, openExternal, undoRedoAccelerators }: {
+   app: Electron.App,
+   mainWindow: BrowserWindow,
+   isStoreBuild: boolean,
+   openExternal: (url: string) => void,
++  undoRedoAccelerators: UndoRedoAccelerators,
+ }) => {
++  // The accelerators come from the user's undo/redo key bindings. On Windows/Linux they are only displayed,
++  // because the renderer handles the key bindings, and text fields handle undo natively.
++  // On macOS they cannot be display-only (and are needed for undo in text fields), so don't use a single key without a modifier.
++  const getUndoRedoAccelerator = (accelerator: string | undefined) => {
++    if (accelerator == null || (process.platform === 'darwin' && !accelerator.includes('+'))) return {};
++    return { accelerator, registerAccelerator: false };
++  };
++
+   // todo TS mainWindow.webContents.send
+   const menu: (MenuItemConstructorOptions | MenuItem)[] = [
+     ...(process.platform === 'darwin' ? [{ role: 'appMenu' as const }] : []),
+@@ -244,7 +258,7 @@ export default ({ app, mainWindow, isStoreBuild, openExternal }: {
+         // only do native undo/redo (for text fields), like `role: 'undo'` does.
+         {
+           label: esc(t('Undo')),
+-          accelerator: 'CommandOrControl+Z',
++          ...getUndoRedoAccelerator(undoRedoAccelerators.undo),
+           click(_menuItem, _window, event) {
+             if (event.triggeredByAccelerator) mainWindow.webContents.undo();
+             else mainWindow.webContents.send('menuUndo');
+@@ -252,7 +266,7 @@ export default ({ app, mainWindow, isStoreBuild, openExternal }: {
+         },
+         {
+           label: esc(t('Redo')),
+-          accelerator: process.platform === 'win32' ? 'Control+Y' : 'Shift+CommandOrControl+Z',
++          ...getUndoRedoAccelerator(undoRedoAccelerators.redo),
+           click(_menuItem, _window, event) {
+             if (event.triggeredByAccelerator) mainWindow.webContents.redo();
+             else mainWindow.webContents.send('menuRedo');
+diff --git a/src/renderer/src/App.tsx b/src/renderer/src/App.tsx
+index d1e7f947..353c1459 100644
+--- a/src/renderer/src/App.tsx
++++ b/src/renderer/src/App.tsx
+@@ -84,7 +84,9 @@ import {
+   getOutFileExtension,
+   getSuffixedOutPath,
+   calculateTimelinePercent,
++  isMac,
+ } from './util';
++import { getUndoRedoAccelerators, localizeUndoRedoKeyBindings } from './util/keyBindings';
+ import getSwal, { errorToast, showPlaybackFailedMessage } from './swal';
+ import { adjustRate } from './util/rate-calculator';
+ import { askExtractFramesAsImages } from './dialogs/extractFrames';
+@@ -2218,6 +2220,17 @@ function App() {
+ 
+   const { keyboardLayoutMap, updateKeyboardLayout } = useKeyboard({ keyBindings, keyUpActions, getKeyboardAction, closeExportConfirm, exportConfirmOpen });
+ 
++  useEffect(() => {
++    if (keyboardLayoutMap == null) return;
++    const localizedKeyBindings = localizeUndoRedoKeyBindings(keyBindings, keyboardLayoutMap);
++    if (localizedKeyBindings !== keyBindings) setKeyBindings(localizedKeyBindings);
++  }, [keyBindings, keyboardLayoutMap, setKeyBindings]);
++
++  useEffect(() => {
++    if (keyboardLayoutMap == null) return;
++    ipcRenderer.send('setUndoRedoAccelerators', getUndoRedoAccelerators(keyBindings, keyboardLayoutMap, isMac));
++  }, [keyBindings, keyboardLayoutMap]);
++
+   useEffect(() => {
+     // eslint-disable-next-line unicorn/prefer-add-event-listener
+     document.ondragover = dragPreventer;
+diff --git a/src/renderer/src/util/keyBindings.test.ts b/src/renderer/src/util/keyBindings.test.ts
+new file mode 100644
+index 00000000..c081f903
+--- /dev/null
++++ b/src/renderer/src/util/keyBindings.test.ts
+@@ -0,0 +1,76 @@
++import { describe, it, expect } from 'vitest';
++
++import type { KeyBinding } from '../../../common/types';
++import { getUndoRedoAccelerators, keyBindingToAccelerator, localizeUndoRedoKeyBindings } from './keyBindings';
++
++const usLayout = new Map([['KeyY', 'y'], ['KeyZ', 'z'], ['KeyA', 'a'], ['Comma', ','], ['Equal', '=']]);
++const germanLayout = new Map([['KeyY', 'z'], ['KeyZ', 'y'], ['KeyA', 'a'], ['Comma', ','], ['BracketRight', '+']]);
++
++const defaultBindings: KeyBinding[] = [
++  { keys: 'KeyZ', action: 'timelineToggleComfortZoom' },
++  { keys: 'ControlLeft+KeyZ', action: 'undo' },
++  { keys: 'MetaLeft+KeyZ', action: 'undo' },
++  { keys: 'ControlLeft+ShiftLeft+KeyZ', action: 'redo' },
++  { keys: 'MetaLeft+ShiftLeft+KeyZ', action: 'redo' },
++];
++
++describe('localizeUndoRedoKeyBindings', () => {
++  it('does nothing on a US layout', () => {
++    expect(localizeUndoRedoKeyBindings(defaultBindings, usLayout)).toBe(defaultBindings);
++  });
++
++  it('moves default undo/redo to the key labeled Z on a German layout', () => {
++    expect(localizeUndoRedoKeyBindings(defaultBindings, germanLayout)).toEqual([
++      { keys: 'KeyZ', action: 'timelineToggleComfortZoom' },
++      { keys: 'ControlLeft+KeyY', action: 'undo' },
++      { keys: 'MetaLeft+KeyY', action: 'undo' },
++      { keys: 'ControlLeft+ShiftLeft+KeyY', action: 'redo' },
++      { keys: 'MetaLeft+ShiftLeft+KeyY', action: 'redo' },
++    ]);
++  });
++
++  it('is stable once localized', () => {
++    const localized = localizeUndoRedoKeyBindings(defaultBindings, germanLayout);
++    expect(localizeUndoRedoKeyBindings(localized, germanLayout)).toBe(localized);
++  });
++
++  it('leaves bindings changed by the user alone', () => {
++    const bindings: KeyBinding[] = [{ keys: 'ControlLeft+KeyU', action: 'undo' }, { keys: 'ControlLeft+KeyZ', action: 'export' }];
++    expect(localizeUndoRedoKeyBindings(bindings, germanLayout)).toBe(bindings);
++  });
++
++  it('does not create duplicate bindings', () => {
++    const bindings: KeyBinding[] = [{ keys: 'ControlLeft+KeyZ', action: 'undo' }, { keys: 'ControlLeft+KeyY', action: 'export' }];
++    expect(localizeUndoRedoKeyBindings(bindings, germanLayout)).toBe(bindings);
++  });
++});
++
++describe('keyBindingToAccelerator', () => {
++  it('converts using the letter on the key', () => {
++    expect(keyBindingToAccelerator('ControlLeft+KeyZ', usLayout, false)).toBe('Ctrl+Z');
++    expect(keyBindingToAccelerator('ControlLeft+KeyY', germanLayout, false)).toBe('Ctrl+Z');
++    expect(keyBindingToAccelerator('ControlLeft+ShiftLeft+KeyY', germanLayout, false)).toBe('Ctrl+Shift+Z');
++    expect(keyBindingToAccelerator('MetaLeft+KeyY', germanLayout, true)).toBe('Command+Z');
++    expect(keyBindingToAccelerator('ControlLeft+BracketRight', germanLayout, false)).toBe('Ctrl+Plus');
++    expect(keyBindingToAccelerator('ShiftLeft+ArrowLeft', usLayout, false)).toBe('Shift+Left');
++    expect(keyBindingToAccelerator('F5', usLayout, false)).toBe('F5');
++  });
++
++  it('returns undefined when it cannot convert', () => {
++    expect(keyBindingToAccelerator('ControlLeft+NumpadMultiply', usLayout, false)).toBeUndefined();
++    expect(keyBindingToAccelerator('ControlLeft', usLayout, false)).toBeUndefined();
++  });
++});
++
++describe('getUndoRedoAccelerators', () => {
++  it('picks the right binding for the platform', () => {
++    const localized = localizeUndoRedoKeyBindings(defaultBindings, germanLayout);
++    expect(getUndoRedoAccelerators(localized, germanLayout, false)).toEqual({ undo: 'Ctrl+Z', redo: 'Ctrl+Shift+Z' });
++    expect(getUndoRedoAccelerators(localized, germanLayout, true)).toEqual({ undo: 'Command+Z', redo: 'Command+Shift+Z' });
++  });
++
++  it('follows changed bindings', () => {
++    const bindings: KeyBinding[] = [{ keys: 'ControlLeft+KeyA', action: 'undo' }];
++    expect(getUndoRedoAccelerators(bindings, usLayout, false)).toEqual({ undo: 'Ctrl+A', redo: undefined });
++  });
++});
+diff --git a/src/renderer/src/util/keyBindings.ts b/src/renderer/src/util/keyBindings.ts
+new file mode 100644
+index 00000000..963e0d71
+--- /dev/null
++++ b/src/renderer/src/util/keyBindings.ts
+@@ -0,0 +1,95 @@
++import type { KeyBinding, KeyboardAction } from '../../../common/types';
++import type { KeyboardLayoutMap } from '../types';
++
++
++// Key bindings normally refer to the physical key position (US layout), but undo/redo should follow the letter printed
++// on the key, like in other apps. E.g. on a German (QWERTZ) keyboard, the letter Z is on the physical KeyY.
++const letterBasedDefaultBindings: Record<string, KeyboardAction> = {
++  'ControlLeft+KeyZ': 'undo',
++  'MetaLeft+KeyZ': 'undo',
++  'ControlLeft+ShiftLeft+KeyZ': 'redo',
++  'MetaLeft+ShiftLeft+KeyZ': 'redo',
++};
++
++// Move the default undo/redo bindings to the physical key that has the letter Z in the current keyboard layout.
++// Bindings changed by the user are left alone.
++export function localizeUndoRedoKeyBindings(keyBindings: KeyBinding[], keyboardLayoutMap: KeyboardLayoutMap): KeyBinding[] {
++  const zCode = [...keyboardLayoutMap.entries()].find(([, char]) => char.toLowerCase() === 'z')?.[0];
++  if (zCode == null || zCode === 'KeyZ') return keyBindings;
++
++  const existingKeys = new Set(keyBindings.map(({ keys }) => keys));
++  let changed = false;
++  const newBindings = keyBindings.map((binding) => {
++    if (letterBasedDefaultBindings[binding.keys] !== binding.action) return binding;
++    const keys = binding.keys.replace('KeyZ', zCode);
++    if (existingKeys.has(keys)) return binding; // don't create a duplicate binding
++    changed = true;
++    return { ...binding, keys };
++  });
++  return changed ? newBindings : keyBindings;
++}
++
++const acceleratorModifiers: Record<string, (isMac: boolean) => string> = {
++  ControlLeft: () => 'Ctrl',
++  ControlRight: () => 'Ctrl',
++  ShiftLeft: () => 'Shift',
++  ShiftRight: () => 'Shift',
++  AltLeft: () => 'Alt',
++  AltRight: () => 'Alt',
++  MetaLeft: (isMac) => (isMac ? 'Command' : 'Super'),
++  MetaRight: (isMac) => (isMac ? 'Command' : 'Super'),
++};
++
++const acceleratorKeyNames: Record<string, string> = {
++  Space: 'Space',
++  Enter: 'Enter',
++  Escape: 'Esc',
++  Tab: 'Tab',
++  Backspace: 'Backspace',
++  Delete: 'Delete',
++  Insert: 'Insert',
++  Home: 'Home',
++  End: 'End',
++  PageUp: 'PageUp',
++  PageDown: 'PageDown',
++  ArrowUp: 'Up',
++  ArrowDown: 'Down',
++  ArrowLeft: 'Left',
++  ArrowRight: 'Right',
++};
++
++// Convert a key binding to an Electron menu accelerator string, e.g. "ControlLeft+KeyZ" => "Ctrl+Z"
++export function keyBindingToAccelerator(keys: string, keyboardLayoutMap: KeyboardLayoutMap, isMac: boolean): string | undefined {
++  const parts = keys.split('+');
++  const modifiers = parts.filter((code) => acceleratorModifiers[code] != null);
++  const mainKeys = parts.filter((code) => acceleratorModifiers[code] == null);
++  if (mainKeys.length !== 1) return undefined;
++  const [mainKey] = mainKeys;
++
++  let keyName: string | undefined;
++  if (/^F\d{1,2}$/.test(mainKey!)) keyName = mainKey;
++  else if (acceleratorKeyNames[mainKey!] != null) keyName = acceleratorKeyNames[mainKey!];
++  else {
++    const char = keyboardLayoutMap.get(mainKey!);
++    if (char != null && char.length === 1) keyName = char === '+' ? 'Plus' : char.toUpperCase();
++  }
++  if (keyName == null) return undefined;
++
++  return [...new Set(modifiers.map((code) => acceleratorModifiers[code]!(isMac))), keyName].join('+');
++}
++
++// Which binding to show in the Edit menu for each of undo/redo
++export function getUndoRedoAccelerators(keyBindings: KeyBinding[], keyboardLayoutMap: KeyboardLayoutMap, isMac: boolean) {
++  const getAccelerator = (action: KeyboardAction) => {
++    const isMetaBinding = (keys: string) => keys.split('+').some((code) => code === 'MetaLeft' || code === 'MetaRight');
++    // prefer Cmd bindings on macOS, and non-Win key bindings on other platforms
++    const bindings = keyBindings.filter((binding) => binding.action === action)
++      .sort((a, b) => Number(isMetaBinding(b.keys) === isMac) - Number(isMetaBinding(a.keys) === isMac));
++    for (const { keys } of bindings) {
++      const accelerator = keyBindingToAccelerator(keys, keyboardLayoutMap, isMac);
++      if (accelerator != null) return accelerator;
++    }
++    return undefined;
++  };
++  return { undo: getAccelerator('undo'), redo: getAccelerator('redo') };
++}

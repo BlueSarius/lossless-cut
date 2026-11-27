@@ -1,0 +1,268 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Sat, 10 Oct 2026 14:37:23 +0000
+Subject: [PATCH] Aurora segment palette and output file info on export success
+ dialog
+
+- Replace segment color palette with an aurora-inspired palette (violets,
+  magentas, pinks, blues + warm coral/orange/peach accents), avoiding any
+  green, teal or yellow-green hues
+- Show output file name, duration and size (plus totals for multiple
+  files) in the export/merge success dialog
+- Fix merge success icon color (invalid 'success'/'warning' CSS values)
+
+Fork-Change: 02-aurora-palette-export-info
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01S8DY3nnonKYhuCbPgrHW7V
+---
+ locales/en/translation.json                   |  5 ++
+ src/renderer/src/App.tsx                      |  4 +-
+ src/renderer/src/components/GenericDialog.tsx | 39 +++++----
+ .../src/components/OutputFilesInfo.tsx        | 87 +++++++++++++++++++
+ src/renderer/src/util/colors.ts               |  6 +-
+ 5 files changed, 121 insertions(+), 20 deletions(-)
+ create mode 100644 src/renderer/src/components/OutputFilesInfo.tsx
+
+diff --git a/locales/en/translation.json b/locales/en/translation.json
+index 7488aefb..38742bfa 100644
+--- a/locales/en/translation.json
++++ b/locales/en/translation.json
+@@ -342,6 +342,7 @@
+   "File info": "File info",
+   "File is not natively supported. Preview playback may be slow and of low quality, but the final export will be lossless. You may convert the file from the menu for a better preview.": "File is not natively supported. Preview playback may be slow and of low quality, but the final export will be lossless. You may convert the file from the menu for a better preview.",
+   "File names of extracted video frames": "File names of extracted video frames",
++  "File size": "File size",
+   "Files merged with warning(s)_one": "Files merged with a warning",
+   "Files merged with warning(s)_other": "Files merged with warnings",
+   "Files merged!": "Files merged!",
+@@ -449,6 +450,7 @@
+   "Loaded existing preview file: {{ fileName }}": "Loaded existing preview file: {{ fileName }}",
+   "Loading": "Loading",
+   "Loading file": "Loading file",
++  "Loading output file info...": "Loading output file info...",
+   "Loading subtitle": "Loading subtitle",
+   "Lock/unlock output format": "Lock/unlock output format",
+   "Log file": "Log file",
+@@ -549,6 +551,7 @@
+   "Other operations": "Other operations",
+   "Output actions": "Output actions",
+   "Output container format:": "Output container format:",
++  "Output file": "Output file",
+   "Output file already exists, refusing to overwrite. You can turn on overwriting in settings.": "Output file already exists, refusing to overwrite. You can turn on overwriting in settings.",
+   "Output file name is the same as the source file name. This increases the risk of accidentally overwriting or deleting source files!": "Output file name is the same as the source file name. This increases the risk of accidentally overwriting or deleting source files!",
+   "Output file name template": "Output file name template",
+@@ -816,6 +819,8 @@
+   "Toggle zoom between 1x and a calculated comfortable zoom level": "Toggle zoom between 1x and a calculated comfortable zoom level",
+   "Tools": "Tools",
+   "Top": "Top",
++  "Total ({{count}} files)_one": "Total ({{count}} files)",
++  "Total ({{count}} files)_other": "Total ({{count}} files)",
+   "Total seconds": "Total seconds",
+   "Track": "Track",
+   "Track {{num}} info": "Track {{num}} info",
+diff --git a/src/renderer/src/App.tsx b/src/renderer/src/App.tsx
+index 1cb50d99..561a4555 100644
+--- a/src/renderer/src/App.tsx
++++ b/src/renderer/src/App.tsx
+@@ -968,7 +968,7 @@ function App() {
+ 
+       if (!hideAllNotifications) {
+         showOsNotification(i18n.t('Merge finished'));
+-        openConcatFinishedDialog({ filePath: outPath, notices: [...notices], warnings: [...warnings] });
++        openConcatFinishedDialog({ filePath: outPath, outputPaths: [outPath], notices: [...notices], warnings: [...warnings] });
+       }
+     } catch (err) {
+       if (err instanceof DirectoryAccessDeclinedError || isAbortedError(err)) return;
+@@ -1213,7 +1213,7 @@ function App() {
+       invariant(revealPath != null);
+       if (!hideAllNotifications) {
+         showOsNotification(i18n.t('Export finished'));
+-        openCutFinishedDialog({ filePath: revealPath, warnings: [...warnings], notices: [...notices] });
++        openCutFinishedDialog({ filePath: revealPath, outputPaths: exportedPaths, warnings: [...warnings], notices: [...notices] });
+       }
+ 
+       setExportCount((c) => c + 1);
+diff --git a/src/renderer/src/components/GenericDialog.tsx b/src/renderer/src/components/GenericDialog.tsx
+index fa17d91d..7ae4f33e 100644
+--- a/src/renderer/src/components/GenericDialog.tsx
++++ b/src/renderer/src/components/GenericDialog.tsx
+@@ -12,6 +12,7 @@ import { showItemInFolder } from '../util';
+ import type { CleanupChoice, CleanupChoicesType } from '../dialogs';
+ import { ListItem, Notices, OutputIncorrectSeeHelpMenu, UnorderedList, Warnings } from '../dialogs';
+ import Checkbox from './Checkbox';
++import OutputFilesInfo from './OutputFilesInfo';
+ import { saveColor, warningColor } from '../colors';
+ 
+ 
+@@ -178,7 +179,7 @@ export function useDialog() {
+     }
+   }, [showGenericDialog, t]);
+ 
+-  const openCutFinishedDialog = useCallback(async ({ filePath, warnings, notices }: { filePath: string, warnings: string[], notices: string[] }) => {
++  const openCutFinishedDialog = useCallback(async ({ filePath, outputPaths, warnings, notices }: { filePath: string, outputPaths: string[], warnings: string[], notices: string[] }) => {
+     const hasWarnings = warnings.length > 0;
+ 
+     // https://github.com/mifi/lossless-cut/issues/2048
+@@ -186,31 +187,37 @@ export function useDialog() {
+       filePath,
+       width: '60em',
+       children: (
+-        <UnorderedList>
+-          <ListItem icon={<FaCheckCircle />} iconColor={hasWarnings ? warningColor : saveColor} style={{ fontWeight: 'bold' }}>{hasWarnings ? t('Export finished with warning(s)', { count: warnings.length }) : t('Export is done!')}</ListItem>
+-          <Warnings warnings={warnings} />
+-          <ListItem icon={<FaInfoCircle />}>{t('Please test the output file in your desired player/editor before you delete the source file.')}</ListItem>
+-          <OutputIncorrectSeeHelpMenu />
+-          <Notices notices={notices} />
+-        </UnorderedList>
++        <>
++          <OutputFilesInfo paths={outputPaths} />
++          <UnorderedList>
++            <ListItem icon={<FaCheckCircle />} iconColor={hasWarnings ? warningColor : saveColor} style={{ fontWeight: 'bold' }}>{hasWarnings ? t('Export finished with warning(s)', { count: warnings.length }) : t('Export is done!')}</ListItem>
++            <Warnings warnings={warnings} />
++            <ListItem icon={<FaInfoCircle />}>{t('Please test the output file in your desired player/editor before you delete the source file.')}</ListItem>
++            <OutputIncorrectSeeHelpMenu />
++            <Notices notices={notices} />
++          </UnorderedList>
++        </>
+       ),
+     });
+   }, [openExportFinishedDialog, t]);
+ 
+-  const openConcatFinishedDialog = useCallback(async ({ filePath, warnings, notices }: { filePath: string, warnings: string[], notices: string[] }) => {
++  const openConcatFinishedDialog = useCallback(async ({ filePath, outputPaths, warnings, notices }: { filePath: string, outputPaths: string[], warnings: string[], notices: string[] }) => {
+     const hasWarnings = warnings.length > 0;
+ 
+     await openExportFinishedDialog({
+       filePath,
+       width: '60em',
+       children: (
+-        <UnorderedList>
+-          <ListItem icon={<FaCheckCircle />} iconColor={hasWarnings ? 'warning' : 'success'} style={{ fontWeight: 'bold' }}>{hasWarnings ? t('Files merged with warning(s)', { count: warnings.length }) : t('Files merged!')}</ListItem>
+-          <Warnings warnings={warnings} />
+-          <ListItem icon={<FaInfoCircle />}>{t('Please test the output files in your desired player/editor before you delete the source files.')}</ListItem>
+-          <OutputIncorrectSeeHelpMenu />
+-          <Notices notices={notices} />
+-        </UnorderedList>
++        <>
++          <OutputFilesInfo paths={outputPaths} />
++          <UnorderedList>
++            <ListItem icon={<FaCheckCircle />} iconColor={hasWarnings ? warningColor : saveColor} style={{ fontWeight: 'bold' }}>{hasWarnings ? t('Files merged with warning(s)', { count: warnings.length }) : t('Files merged!')}</ListItem>
++            <Warnings warnings={warnings} />
++            <ListItem icon={<FaInfoCircle />}>{t('Please test the output files in your desired player/editor before you delete the source files.')}</ListItem>
++            <OutputIncorrectSeeHelpMenu />
++            <Notices notices={notices} />
++          </UnorderedList>
++        </>
+       ),
+     });
+   }, [openExportFinishedDialog, t]);
+diff --git a/src/renderer/src/components/OutputFilesInfo.tsx b/src/renderer/src/components/OutputFilesInfo.tsx
+new file mode 100644
+index 00000000..1bff0a27
+--- /dev/null
++++ b/src/renderer/src/components/OutputFilesInfo.tsx
+@@ -0,0 +1,87 @@
++import { useEffect, useState } from 'react';
++import { useTranslation } from 'react-i18next';
++import prettyBytes from 'pretty-bytes';
++import pMap from 'p-map';
++
++import { getDuration } from '../ffmpeg';
++import { readFileSize } from '../util';
++import { formatDuration } from '../util/duration';
++
++const { basename } = window.require('node:path');
++
++interface OutputFileInfo {
++  path: string,
++  size: number | undefined,
++  duration: number | undefined,
++}
++
++async function readOutputFileInfo(path: string): Promise<OutputFileInfo> {
++  const [size, duration] = await Promise.all([
++    readFileSize(path).catch((err: unknown) => { console.warn('Unable to read output file size', path, err); return undefined; }),
++    getDuration(path).catch((err: unknown) => { console.warn('Unable to read output file duration', path, err); return undefined; }),
++  ]);
++  return { path, size, duration };
++}
++
++const cellStyle = { padding: '.1em .5em', whiteSpace: 'nowrap' } as const;
++const numericCellStyle = { ...cellStyle, textAlign: 'right' } as const;
++
++const formatSize = (size: number | undefined) => (size != null ? prettyBytes(size) : '-');
++const formatDur = (duration: number | undefined) => (duration != null ? formatDuration({ seconds: duration, shorten: true }) : '-');
++
++function sumDefined(values: (number | undefined)[]) {
++  const defined = values.filter((v): v is number => v != null);
++  return defined.length > 0 ? defined.reduce((acc, v) => acc + v, 0) : undefined;
++}
++
++export default function OutputFilesInfo({ paths }: { paths: string[] }) {
++  const { t } = useTranslation();
++  const [infos, setInfos] = useState<OutputFileInfo[]>();
++
++  useEffect(() => {
++    let canceled = false;
++    (async () => {
++      const result = await pMap(paths, readOutputFileInfo, { concurrency: 5 });
++      if (!canceled) setInfos(result);
++    })();
++    return () => { canceled = true; };
++  }, [paths]);
++
++  if (paths.length === 0) return null;
++
++  if (infos == null) {
++    return <div style={{ opacity: 0.6, margin: '.5em 0' }}>{t('Loading output file info...')}</div>;
++  }
++
++  return (
++    <div style={{ maxHeight: '15em', overflowY: 'auto', margin: '.5em 0 1em 0' }}>
++      <table style={{ borderCollapse: 'collapse', width: '100%' }}>
++        <thead>
++          <tr style={{ opacity: 0.7, textAlign: 'left' }}>
++            <th style={cellStyle}>{t('Output file')}</th>
++            <th style={numericCellStyle}>{t('Duration')}</th>
++            <th style={numericCellStyle}>{t('File size')}</th>
++          </tr>
++        </thead>
++        <tbody>
++          {infos.map(({ path, size, duration }) => (
++            <tr key={path}>
++              <td style={{ ...cellStyle, whiteSpace: 'normal', wordBreak: 'break-all' }} title={path}>{basename(path)}</td>
++              <td style={numericCellStyle}>{formatDur(duration)}</td>
++              <td style={numericCellStyle}>{formatSize(size)}</td>
++            </tr>
++          ))}
++        </tbody>
++        {infos.length > 1 && (
++          <tfoot>
++            <tr style={{ fontWeight: 'bold' }}>
++              <td style={cellStyle}>{t('Total ({{count}} files)', { count: infos.length })}</td>
++              <td style={numericCellStyle}>{formatDur(sumDefined(infos.map((i) => i.duration)))}</td>
++              <td style={numericCellStyle}>{formatSize(sumDefined(infos.map((i) => i.size)))}</td>
++            </tr>
++          </tfoot>
++        )}
++      </table>
++    </div>
++  );
++}
+diff --git a/src/renderer/src/util/colors.ts b/src/renderer/src/util/colors.ts
+index 8fc94a57..3de04cf4 100644
+--- a/src/renderer/src/util/colors.ts
++++ b/src/renderer/src/util/colors.ts
+@@ -3,8 +3,10 @@ import invariant from 'tiny-invariant';
+ 
+ import type { SegmentColorIndex } from '../types';
+ 
+-// http://phrogz.net/css/distinct-colors.html
+-const colorStrings = '#ff5100, #ffc569, #ddffd1, #00ccff, #e9d1ff, #ff0084, #ff6975, #ffe6d1, #ffff69, #69ff96, #008cff, #ae00ff, #ff002b, #ff8c00, #8cff00, #69ffff, #0044ff, #ff00d4, #ffd1d9'.split(',').map((str) => str.trim());
++// "Aurora" palette: violets, magentas, pinks and blues, complemented by warm "sunset" tones (coral, orange, peach).
++// Intentionally contains no greens, teals or yellow-greens (all hues are within 0-30 or 200-350 degrees).
++// Ordered so that neighbouring segments get clearly different hues.
++const colorStrings = '#8a2be2, #ff4fa3, #3d7bff, #ff9f5a, #d36bff, #4fb8ff, #ff6b8b, #6a1bff, #ff8a5c, #82b1ff, #e040fb, #ffab91, #5b5bff, #ff85d8, #2196f3, #ff5e3a, #b388ff, #f06292, #3f51b5, #ffa07a, #7c4dff, #c51162, #9fa8ff, #ff3d6e'.split(',').map((str) => str.trim());
+ const colors = colorStrings.map((str) => color(str));
+ 
+ function getColor(n: number) {

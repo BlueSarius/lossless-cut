@@ -1,0 +1,265 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Sun, 22 Nov 2026 01:52:48 +0000
+Subject: [PATCH] Don't jump far away when seeking to prev/next keyframe before
+ keyframes are loaded
+
+After jumping to a new location, the keyframes around it are read with a
+500ms debounce + ffprobe. Until then, seek prev/next keyframe searched the
+whole keyframe cache and could jump to a keyframe from a previously visited,
+far away location. Now we track which time ranges have actually been read,
+and only seek to a keyframe if the whole range between the current position
+and it has been read; otherwise stay put.
+
+Also fix: if a keyframe read was in progress when the user seeked, the read
+for the new location was skipped (and the in-progress result discarded), so
+keyframes at the new location might never load. Reads are now queued.
+
+Fork-Change: 07-keyframe-seek-before-loaded
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01WdW4mLajyN5sfxHVCHh3ao
+---
+ src/renderer/src/App.tsx                |  8 ++-
+ src/renderer/src/ffmpeg.ts              |  2 +-
+ src/renderer/src/hooks/useKeyframes.ts  | 86 +++++++++++++++++--------
+ src/renderer/src/util/keyframes.test.ts | 14 ++++
+ src/renderer/src/util/keyframes.ts      | 23 +++++++
+ 5 files changed, 103 insertions(+), 30 deletions(-)
+ create mode 100644 src/renderer/src/util/keyframes.test.ts
+ create mode 100644 src/renderer/src/util/keyframes.ts
+
+diff --git a/src/renderer/src/App.tsx b/src/renderer/src/App.tsx
+index 353c1459..80b435c6 100644
+--- a/src/renderer/src/App.tsx
++++ b/src/renderer/src/App.tsx
+@@ -566,7 +566,7 @@ function App() {
+ 
+   const { thumbnailsSorted, setThumbnails } = useThumbnails({ filePath, zoomedDuration, zoomWindowStartTime, showThumbnails });
+ 
+-  const { neighbouringKeyFrames, findNearestKeyFrameTime, keyframeByNumber, readAllKeyframes } = useKeyframes({ keyframesEnabled, filePath, commandedTime, videoStream: activeVideoStream, detectedFps, ffmpegExtractWindow, maxKeyframes, currentCutSegOrWholeTimeline, setWorking, setMaxKeyframes, handleError });
++  const { neighbouringKeyFrames, findNearestKeyFrameTime, findNearestKnownKeyFrameTime, keyframeByNumber, readAllKeyframes } = useKeyframes({ keyframesEnabled, filePath, commandedTime, videoStream: activeVideoStream, detectedFps, ffmpegExtractWindow, maxKeyframes, currentCutSegOrWholeTimeline, setWorking, setMaxKeyframes, handleError });
+   const { waveforms, overviewWaveform, renderOverviewWaveform } = useWaveform({ filePath, relevantTime, waveformEnabled, audioStream: activeAudioStreams[0], ffmpegExtractWindow, fileDuration });
+ 
+   const currentFrame = useMemo(() => {
+@@ -1567,10 +1567,12 @@ function App() {
+ 
+   const seekClosestKeyframe = useCallback((direction: number) => {
+     const sigma = detectedFps ? (1 / detectedFps) : 0.1; // because we don't want it to find the keyframe we're currently at.
+-    const time = findNearestKeyFrameTime({ time: getRelevantTime() + direction * sigma, direction });
++    const currentTime = getRelevantTime();
++    // If keyframes around the current position haven't been read yet (e.g. just after jumping to a new location), stay where we are
++    const time = findNearestKnownKeyFrameTime({ fromTime: currentTime, time: currentTime + direction * sigma, direction });
+     if (time == null) return;
+     seekAbs(time);
+-  }, [detectedFps, findNearestKeyFrameTime, getRelevantTime, seekAbs]);
++  }, [detectedFps, findNearestKnownKeyFrameTime, getRelevantTime, seekAbs]);
+ 
+   const onTimelineWheel = useTimelineScroll({ wheelSensitivity, mouseWheelZoomModifierKey, mouseWheelFrameSeekModifierKey, mouseWheelKeyframeSeekModifierKey, invertTimelineScroll, zoomRel, seekRel, shortStep, seekClosestKeyframe });
+ 
+diff --git a/src/renderer/src/ffmpeg.ts b/src/renderer/src/ffmpeg.ts
+index 01e3747d..0d868442 100644
+--- a/src/renderer/src/ffmpeg.ts
++++ b/src/renderer/src/ffmpeg.ts
+@@ -60,7 +60,7 @@ export function isCuttingEnd(cutTo: number, fileDuration: number | undefined) {
+   return cutTo < fileDuration;
+ }
+ 
+-function getIntervalAroundTime(time: number, window: number) {
++export function getIntervalAroundTime(time: number, window: number) {
+   return {
+     from: Math.max(time - window / 2, 0),
+     to: time + window / 2,
+diff --git a/src/renderer/src/hooks/useKeyframes.ts b/src/renderer/src/hooks/useKeyframes.ts
+index 97d39aa9..00ca8101 100644
+--- a/src/renderer/src/hooks/useKeyframes.ts
++++ b/src/renderer/src/hooks/useKeyframes.ts
+@@ -4,10 +4,12 @@ import useDebounceOld from 'react-use/lib/useDebounce'; // Want to phase out thi
+ import { useTranslation } from 'react-i18next';
+ 
+ import type { Frame } from '../ffmpeg';
+-import { readFramesAroundTime, findNearestKeyFrameTime as ffmpegFindNearestKeyFrameTime, readFrames } from '../ffmpeg';
++import { getIntervalAroundTime, findNearestKeyFrameTime as ffmpegFindNearestKeyFrameTime, readFrames } from '../ffmpeg';
+ import type { FFprobeStream } from '../../../common/ffprobe';
+ import { getFrameCountRaw } from '../edlFormats';
+ import type { HandleError } from '../contexts';
++import type { ScannedInterval } from '../util/keyframes';
++import { isRangeScanned } from '../util/keyframes';
+ 
+ 
+ const toObj = (map: Frame[]) => Object.fromEntries(map.map((frame) => [frame.time, frame]));
+@@ -28,7 +30,8 @@ function useKeyframes({ keyframesEnabled, filePath, commandedTime, videoStream,
+   const { t } = useTranslation();
+ 
+   const readingKeyframesPromise = useRef<Promise<unknown>>(undefined);
+-  const [neighbouringKeyFramesMap, setNeighbouringKeyFrames] = useState<Record<string, Frame>>({});
++  // keyframes + the time intervals that have actually been read (so we know where we *don't* have keyframe info)
++  const [{ frames: neighbouringKeyFramesMap, scannedIntervals }, setKeyframesState] = useState<{ frames: Record<string, Frame>, scannedIntervals: ScannedInterval[] }>({ frames: {}, scannedIntervals: [] });
+ 
+   const neighbouringKeyFrames = useMemo(() => Object.values(neighbouringKeyFramesMap), [neighbouringKeyFramesMap]);
+ 
+@@ -44,45 +47,76 @@ function useKeyframes({ keyframesEnabled, filePath, commandedTime, videoStream,
+ 
+   const findNearestKeyFrameTime = useCallback(({ time, direction }: { time: number, direction: number }) => ffmpegFindNearestKeyFrameTime({ frames: neighbouringKeyFrames, time, direction }), [neighbouringKeyFrames]);
+ 
+-  // eslint-disable-next-line react-hooks/set-state-in-effect
+-  useEffect(() => setNeighbouringKeyFrames({}), [filePath, videoStream]);
++  // Like findNearestKeyFrameTime, but only returns a keyframe if every packet between `fromTime` and that keyframe has been read.
++  // Otherwise (e.g. right after a seek to a new location, before keyframes there have been read)
++  // the "nearest" keyframe found in the cache could be far away, from a previously visited location,
++  // while the real nearest keyframe is simply not known yet.
++  const findNearestKnownKeyFrameTime = useCallback(({ fromTime, time, direction }: { fromTime: number, time: number, direction: number }) => {
++    const keyframeTime = ffmpegFindNearestKeyFrameTime({ frames: neighbouringKeyFrames, time, direction });
++    if (keyframeTime == null) return undefined;
++    if (!isRangeScanned(scannedIntervals, fromTime, keyframeTime)) return undefined;
++    return keyframeTime;
++  }, [neighbouringKeyFrames, scannedIntervals]);
++
++  // used to discard results from a previously opened file
++  const fileKey = useRef(0);
++
++  useEffect(() => {
++    fileKey.current += 1;
++    // eslint-disable-next-line react-hooks/set-state-in-effect
++    setKeyframesState({ frames: {}, scannedIntervals: [] });
++  }, [filePath, videoStream]);
+ 
+   useDebounceOld(() => {
+-    let aborted = false;
++    // See getIntervalAroundTime
++    // We still want to calculate keyframes even if not shouldShowKeyframes because maybe we want to be able to step to the closest keyframe
++    const shouldRun = keyframesEnabled && filePath != null && videoStream && commandedTime != null;
++    if (!shouldRun) return;
+ 
+-    (async () => {
+-      // See getIntervalAroundTime
+-      // We still want to calculate keyframes even if not shouldShowKeyframes because maybe we want to be able to step to the closest keyframe
+-      const shouldRun = keyframesEnabled && filePath != null && videoStream && commandedTime != null && !readingKeyframesPromise.current;
+-      if (!shouldRun) return;
++    const myFileKey = fileKey.current;
+ 
++    // If a read is already in progress, queue this one after it, instead of skipping it
++    // (skipping meant that the new location would never get read unless the user seeked again)
++    const promise = (async () => {
+       try {
+-        const promise = readFramesAroundTime({ filePath, aroundTime: commandedTime, streamIndex: videoStream.index, window: ffmpegExtractWindow });
+-        readingKeyframesPromise.current = promise;
+-        const newFrames = await promise;
+-        if (aborted) return;
++        await readingKeyframesPromise.current;
++      } catch {
++        // handled below
++      }
++      if (fileKey.current !== myFileKey) return;
++
++      try {
++        const { from, to } = getIntervalAroundTime(commandedTime, ffmpegExtractWindow);
++        const newFrames = await readFrames({ filePath, from, to, streamIndex: videoStream.index });
++        // Note: we don't discard the results if the user has seeked elsewhere in the meantime, because they are still valid keyframes for this file
++        if (fileKey.current !== myFileKey) return;
++        const createdAt = newFrames[0]?.createdAt ?? new Date();
+         const newKeyFrames = newFrames.filter((frame) => frame.keyframe);
+         // console.log(newFrames);
+-        setNeighbouringKeyFrames((existingKeyFramesMap) => {
++        setKeyframesState(({ frames: existingKeyFramesMap, scannedIntervals: existingIntervals }) => {
+           let existingFrames = Object.values(existingKeyFramesMap);
++          let intervals = existingIntervals;
+           if (existingFrames.length >= maxKeyframes) {
+-            existingFrames = sortBy(existingFrames, 'createdAt').slice(newKeyFrames.length);
++            const sorted = sortBy(existingFrames, 'createdAt');
++            const evicted = sorted.slice(0, newKeyFrames.length);
++            existingFrames = sorted.slice(newKeyFrames.length);
++            // we no longer have all keyframes of the intervals whose frames were evicted, so forget those intervals
++            const newestEvicted = evicted.at(-1)?.createdAt;
++            if (newestEvicted != null) intervals = intervals.filter((interval) => interval.createdAt > newestEvicted);
+           }
+           return {
+-            ...toObj(existingFrames),
+-            ...toObj(newKeyFrames),
++            frames: {
++              ...toObj(existingFrames),
++              ...toObj(newKeyFrames),
++            },
++            scannedIntervals: [...intervals, { from, to, createdAt }],
+           };
+         });
+       } catch (err) {
+         console.error('Failed to read keyframes', err);
+-      } finally {
+-        readingKeyframesPromise.current = undefined;
+       }
+     })();
+-
+-    return () => {
+-      aborted = true;
+-    };
++    readingKeyframesPromise.current = promise;
+     // NOTE: you have to manually pass dependencies here, eslint doesn't recognize it
+   }, 500, [keyframesEnabled, filePath, commandedTime, videoStream, ffmpegExtractWindow, maxKeyframes]);
+ 
+@@ -94,7 +128,7 @@ function useKeyframes({ keyframesEnabled, filePath, commandedTime, videoStream,
+       setWorking({ text: t('Reading all keyframes') });
+       const newFrames = await readFrames({ filePath, from: start, to: end, streamIndex: videoStream.index });
+       const newKeyFrames = newFrames.filter((frame) => frame.keyframe);
+-      setNeighbouringKeyFrames(toObj(newKeyFrames));
++      setKeyframesState({ frames: toObj(newKeyFrames), scannedIntervals: [{ from: start, to: end, createdAt: newFrames[0]?.createdAt ?? new Date() }] });
+       setMaxKeyframes(newKeyFrames.length);
+     } catch (err) {
+       handleError({ err });
+@@ -105,7 +139,7 @@ function useKeyframes({ keyframesEnabled, filePath, commandedTime, videoStream,
+ 
+ 
+   return {
+-    neighbouringKeyFrames, findNearestKeyFrameTime, keyframeByNumber, readAllKeyframes,
++    neighbouringKeyFrames, findNearestKeyFrameTime, findNearestKnownKeyFrameTime, keyframeByNumber, readAllKeyframes,
+   };
+ }
+ 
+diff --git a/src/renderer/src/util/keyframes.test.ts b/src/renderer/src/util/keyframes.test.ts
+new file mode 100644
+index 00000000..525ea917
+--- /dev/null
++++ b/src/renderer/src/util/keyframes.test.ts
+@@ -0,0 +1,14 @@
++import { test, expect } from 'vitest';
++
++import { isRangeScanned } from './keyframes';
++
++test('isRangeScanned', () => {
++  expect(isRangeScanned([], 1, 2)).toBe(false);
++  expect(isRangeScanned([{ from: 0, to: 60 }], 10, 20)).toBe(true);
++  expect(isRangeScanned([{ from: 0, to: 60 }], 20, 10)).toBe(true); // reversed
++  expect(isRangeScanned([{ from: 0, to: 60 }], 50, 70)).toBe(false);
++  expect(isRangeScanned([{ from: 30, to: 90 }, { from: 0, to: 60 }], 10, 80)).toBe(true); // overlapping, unsorted
++  expect(isRangeScanned([{ from: 0, to: 60 }, { from: 60, to: 120 }], 10, 110)).toBe(true); // touching
++  expect(isRangeScanned([{ from: 0, to: 60 }, { from: 600, to: 660 }], 30, 630)).toBe(false); // gap
++  expect(isRangeScanned([{ from: 0, to: 60 }], 60, 60)).toBe(true);
++});
+diff --git a/src/renderer/src/util/keyframes.ts b/src/renderer/src/util/keyframes.ts
+new file mode 100644
+index 00000000..7ddf982e
+--- /dev/null
++++ b/src/renderer/src/util/keyframes.ts
+@@ -0,0 +1,23 @@
++export interface ScannedInterval {
++  from: number,
++  to: number,
++  createdAt: Date,
++}
++
++/**
++ * Returns true if the whole range [from, to] is covered by the union of the given intervals,
++ * i.e. we have actually read all packets in that range, so we know every keyframe in it.
++ */
++export function isRangeScanned(intervals: Pick<ScannedInterval, 'from' | 'to'>[], from: number, to: number) {
++  const start = Math.min(from, to);
++  const end = Math.max(from, to);
++
++  let reached = start;
++  const sorted = [...intervals].sort((a, b) => a.from - b.from);
++  for (const interval of sorted) {
++    if (interval.from > reached) break; // gap
++    if (interval.to > reached) reached = interval.to;
++    if (reached >= end) return true;
++  }
++  return reached >= end;
++}

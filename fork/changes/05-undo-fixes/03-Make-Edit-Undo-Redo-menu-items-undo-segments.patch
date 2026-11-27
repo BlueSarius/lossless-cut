@@ -1,0 +1,89 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Mon, 19 Oct 2026 22:00:07 +0000
+Subject: [PATCH] Make Edit > Undo/Redo menu items undo segments
+
+Clicking Edit > Undo/Redo now undoes/redoes segment changes, or the text
+being edited if a text field is focused. Keyboard shortcuts behave as
+before: segment undo is handled by the renderer key bindings, and the
+menu accelerator only does native (text field) undo.
+
+Fork-Change: 05-undo-fixes
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01WaKzAzqVE95o3kt4D9v1V7
+---
+ src/main/menu.ts         | 21 +++++++++++++++++++--
+ src/renderer/src/App.tsx | 20 +++++++++++++++++++-
+ 2 files changed, 38 insertions(+), 3 deletions(-)
+
+diff --git a/src/main/menu.ts b/src/main/menu.ts
+index 0848f29c..e8a570a0 100644
+--- a/src/main/menu.ts
++++ b/src/main/menu.ts
+@@ -239,8 +239,25 @@ export default ({ app, mainWindow, isStoreBuild, openExternal }: {
+       submenu: [
+         // https://github.com/mifi/lossless-cut/issues/610
+         // https://github.com/mifi/lossless-cut/issues/1183
+-        { role: 'undo', label: esc(t('Undo')) },
+-        { role: 'redo', label: esc(t('Redo')) },
++        // When clicked in the menu, undo/redo segments (or text, if a text field is focused).
++        // Keyboard shortcuts for segment undo/redo are handled by the renderer, so when triggered by the accelerator,
++        // only do native undo/redo (for text fields), like `role: 'undo'` does.
++        {
++          label: esc(t('Undo')),
++          accelerator: 'CommandOrControl+Z',
++          click(_menuItem, _window, event) {
++            if (event.triggeredByAccelerator) mainWindow.webContents.undo();
++            else mainWindow.webContents.send('menuUndo');
++          },
++        },
++        {
++          label: esc(t('Redo')),
++          accelerator: process.platform === 'win32' ? 'Control+Y' : 'Shift+CommandOrControl+Z',
++          click(_menuItem, _window, event) {
++            if (event.triggeredByAccelerator) mainWindow.webContents.redo();
++            else mainWindow.webContents.send('menuRedo');
++          },
++        },
+         { type: 'separator' },
+         { role: 'cut', label: esc(t('Cut')) },
+         { role: 'copy', label: esc(t('Copy')) },
+diff --git a/src/renderer/src/App.tsx b/src/renderer/src/App.tsx
+index 8e382ec2..d1e7f947 100644
+--- a/src/renderer/src/App.tsx
++++ b/src/renderer/src/App.tsx
+@@ -2354,7 +2354,25 @@ function App() {
+       }
+     }
+ 
++    const isTextFieldFocused = () => {
++      const el = document.activeElement;
++      if (el instanceof HTMLTextAreaElement || (el instanceof HTMLElement && el.isContentEditable)) return true;
++      return el instanceof HTMLInputElement && ['text', 'search', 'url', 'tel', 'password', 'email', 'number'].includes(el.type);
++    };
++
++    // Edit menu undo/redo: undo the text being edited, otherwise the segments
++    const menuUndoRedo = (type: 'undo' | 'redo') => {
++      if (isTextFieldFocused()) {
++        document.execCommand(type);
++        return;
++      }
++      if (type === 'undo') cutSegmentsHistory.back();
++      else cutSegmentsHistory.forward();
++    };
++
+     const allActions = [
++      ['menuUndo', async () => menuUndoRedo('undo')] as const,
++      ['menuRedo', async () => menuUndoRedo('redo')] as const,
+       // actions with arguments:
+       [
+         'openFiles',
+@@ -2422,7 +2440,7 @@ function App() {
+       ipcActions.forEach(([key, action]) => ipcRenderer.off(key, action));
+       ipcRenderer.off('apiAction', tryApiAction);
+     };
+-  }, [checkFileOpened, customOutDir, detectedFps, filePath, getFrameCount, getKeyboardAction, goToTimecodeDirect, handleError, importEdlFile, loadCutSegments, mainActions, promptDownloadMediaUrlWrapper, selectedSegments, toggleKeyboardShortcuts, tryExportEdlFile, userOpenFiles]);
++  }, [checkFileOpened, customOutDir, cutSegmentsHistory, detectedFps, filePath, getFrameCount, getKeyboardAction, goToTimecodeDirect, handleError, importEdlFile, loadCutSegments, mainActions, promptDownloadMediaUrlWrapper, selectedSegments, toggleKeyboardShortcuts, tryExportEdlFile, userOpenFiles]);
+ 
+   const handleBatchFilesDrop = useCallback<DragEventHandler<HTMLDivElement>>(async (ev) => {
+     ev.preventDefault();
