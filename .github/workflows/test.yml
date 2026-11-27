@@ -1,6 +1,10 @@
 name: Test
 
-on: [push, pull_request]
+# Fork: only run once per PR (not for both the branch push and the PR), and on pushes to master
+on:
+  push:
+    branches: [master]
+  pull_request:
 
 jobs:
   test:
@@ -9,7 +13,8 @@ jobs:
 
     strategy:
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        # Fork: Windows only (the fork is only built and used on Windows)
+        os: [windows-latest]
 
     steps:
       # Windows fix. See https://github.com/actions/checkout/issues/226
