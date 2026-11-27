@@ -1,0 +1,345 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Mon, 19 Oct 2026 21:50:57 +0000
+Subject: [PATCH] Fix undo doing nothing once the history is full
+
+react-use's useStateWithHistory leaves its position one past the last
+entry once capacity (100) is reached, so the first undo after every edit
+restored the current state and appeared to do nothing. Replace it with
+our own pure history implementation (with tests).
+
+Also make a timeline drag of a segment a single undo step, instead of
+one step per mouse move, which filled the history very quickly.
+
+Fork-Change: 05-undo-fixes
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01WaKzAzqVE95o3kt4D9v1V7
+---
+ src/renderer/src/App.tsx                      |  3 +-
+ src/renderer/src/Timeline.tsx                 |  9 ++-
+ src/renderer/src/hooks/useSegments.tsx        | 23 +++----
+ src/renderer/src/hooks/useStateWithHistory.ts | 26 ++++++++
+ src/renderer/src/types.ts                     |  3 +-
+ src/renderer/src/util/history.test.ts         | 63 +++++++++++++++++++
+ src/renderer/src/util/history.ts              | 49 +++++++++++++++
+ 7 files changed, 159 insertions(+), 17 deletions(-)
+ create mode 100644 src/renderer/src/hooks/useStateWithHistory.ts
+ create mode 100644 src/renderer/src/util/history.test.ts
+ create mode 100644 src/renderer/src/util/history.ts
+
+diff --git a/src/renderer/src/App.tsx b/src/renderer/src/App.tsx
+index d459d80f..8e382ec2 100644
+--- a/src/renderer/src/App.tsx
++++ b/src/renderer/src/App.tsx
+@@ -669,8 +669,7 @@ function App() {
+     playingRef.current = false;
+     setPlaybackMode(undefined);
+     setFileDuration(undefined);
+-    cutSegmentsHistory.history[0] = []; // in case we have exceeded capacity
+-    cutSegmentsHistory.go(0);
++    cutSegmentsHistory.reset([]);
+     setDetectedFileFormat(undefined);
+     setRotation(360);
+     setProgress(undefined);
+diff --git a/src/renderer/src/Timeline.tsx b/src/renderer/src/Timeline.tsx
+index 2fab8985..ebb1c474 100644
+--- a/src/renderer/src/Timeline.tsx
++++ b/src/renderer/src/Timeline.tsx
+@@ -312,6 +312,9 @@ function Timeline({
+ 
+     mouseDownRef.current = e.target;
+ 
++    // the whole drag should be one undo step
++    const historyOptions = { coalesceKey: `timeline-drag-${e.timeStamp}` };
++
+     function onMouseMove(e2: MouseEvent) {
+       if (mouseDownRef.current == null) return;
+       const mouseDragTimelinePos = getMouseTimelinePos(e2);
+@@ -319,11 +322,11 @@ function Timeline({
+       try {
+         // eslint-disable-next-line unicorn/prefer-switch
+         if (resizingSegmentRef.current?.operation === 'start') {
+-          setCutTime('start', mouseDragTimelinePos);
++          setCutTime('start', mouseDragTimelinePos, historyOptions);
+         } else if (resizingSegmentRef?.current?.operation === 'end') {
+-          setCutTime('end', mouseDragTimelinePos);
++          setCutTime('end', mouseDragTimelinePos, historyOptions);
+         } else if (resizingSegmentRef?.current?.operation === 'move') {
+-          setCutTime('move', mouseDragTimelinePos - (resizingSegmentRef.current.offset ?? 0));
++          setCutTime('move', mouseDragTimelinePos - (resizingSegmentRef.current.offset ?? 0), historyOptions);
+         }
+       } catch (err) {
+         console.warn('Error while resizing segment:', err instanceof Error ? err.message : err);
+diff --git a/src/renderer/src/hooks/useSegments.tsx b/src/renderer/src/hooks/useSegments.tsx
+index a9b9f647..2b041c49 100644
+--- a/src/renderer/src/hooks/useSegments.tsx
++++ b/src/renderer/src/hooks/useSegments.tsx
+@@ -1,6 +1,5 @@
+ import type { MutableRefObject, FormEvent } from 'react';
+ import { useCallback, useRef, useMemo, useState, useEffect } from 'react';
+-import { useStateWithHistory } from 'react-use/lib/useStateWithHistory';
+ import i18n from 'i18next';
+ import pMap from 'p-map';
+ import invariant from 'tiny-invariant';
+@@ -25,6 +24,8 @@ import type { HandleError } from '../contexts';
+ import type { ShowGenericDialog } from '../components/GenericDialog';
+ import { useGenericDialogContext } from '../components/GenericDialog';
+ import ExpressionDialog from '../components/ExpressionDialog';
++import useStateWithHistory from './useStateWithHistory';
++import type { SetStateWithHistoryOptions } from '../util/history';
+ import Button, { DialogButton } from '../components/Button';
+ import { ButtonRow } from '../components/Dialog';
+ import * as Dialog from '../components/Dialog';
+@@ -87,7 +88,7 @@ function useSegments({ filePath, workingRef, setWorking, setProgress, videoStrea
+     return addSegmentColorIndex(createSegment(segment), segColorCounterRef.current);
+   }, [setSegColorCounter]);
+ 
+-  const [cutSegments, setCutSegments, cutSegmentsHistory] = useStateWithHistory<StateSegment[], StateSegment[]>(
++  const [cutSegments, setCutSegments, cutSegmentsHistory] = useStateWithHistory<StateSegment[]>(
+     [],
+     100,
+   );
+@@ -113,7 +114,7 @@ function useSegments({ filePath, workingRef, setWorking, setProgress, videoStrea
+     setSegColorCounter(0);
+   }, [setSegColorCounter]);
+ 
+-  const safeSetCutSegments = useCallback((newSegmentsOrFn: StateSegment[] | ((a: StateSegment[]) => StateSegment[]), clampDuration?: number) => {
++  const safeSetCutSegments = useCallback((newSegmentsOrFn: StateSegment[] | ((a: StateSegment[]) => StateSegment[]), clampDuration?: number, historyOptions?: SetStateWithHistoryOptions) => {
+     function clampValue(val: number | undefined) {
+       if (val == null || Number.isNaN(val)) return undefined;
+       const clamped = Math.max(val, 0);
+@@ -143,11 +144,11 @@ function useSegments({ filePath, workingRef, setWorking, setProgress, videoStrea
+     });
+ 
+     if (typeof newSegmentsOrFn === 'function') {
+-      setCutSegments((existing) => map(newSegmentsOrFn(existing)));
++      setCutSegments((existing) => map(newSegmentsOrFn(existing)), historyOptions);
+       return;
+     }
+ 
+-    setCutSegments(map(newSegmentsOrFn));
++    setCutSegments(map(newSegmentsOrFn), historyOptions);
+   }, [setCutSegments]);
+ 
+   const clearSegments = useCallback(() => {
+@@ -448,16 +449,16 @@ function useSegments({ filePath, workingRef, setWorking, setProgress, videoStrea
+     safeSetCutSegments((existingSegments) => combineSelectedSegments2(existingSegments));
+   }, [safeSetCutSegments]);
+ 
+-  const updateSegAtIndex = useCallback<UpdateSegAtIndex>((index, newProps) => {
++  const updateSegAtIndex = useCallback<UpdateSegAtIndex>((index, newProps, historyOptions) => {
+     if (index < 0) return;
+     const cutSegmentsNew = [...cutSegments];
+     const existing = cutSegments[index];
+     invariant(existing != null);
+     cutSegmentsNew.splice(index, 1, { ...existing, ...newProps });
+-    safeSetCutSegments(cutSegmentsNew, fileDuration);
++    safeSetCutSegments(cutSegmentsNew, fileDuration, historyOptions);
+   }, [cutSegments, safeSetCutSegments, fileDuration]);
+ 
+-  const setCutTime = useCallback((type: 'start' | 'end' | 'move', time: number | undefined) => {
++  const setCutTime = useCallback((type: 'start' | 'end' | 'move', time: number | undefined, historyOptions?: SetStateWithHistoryOptions) => {
+     if (!isDurationValid(fileDuration) || currentCutSeg == null) return;
+ 
+     const clampStart = (start: number) => Math.min(Math.max(start, 0), fileDuration);
+@@ -468,20 +469,20 @@ function useSegments({ filePath, workingRef, setWorking, setProgress, videoStrea
+       if (currentCutSeg.end != null && time >= currentCutSeg.end) {
+         throw new UserFacingError(i18n.t('Segment start time must precede end time'));
+       }
+-      updateSegAtIndex(currentSegIndexSafe, { start: clampStart(time) });
++      updateSegAtIndex(currentSegIndexSafe, { start: clampStart(time) }, historyOptions);
+     }
+     if (type === 'end') {
+       if (time != null && time <= currentCutSeg.start) {
+         throw new UserFacingError(i18n.t('Segment start time must precede end time'));
+       }
+-      updateSegAtIndex(currentSegIndexSafe, { end: clampEnd(time) });
++      updateSegAtIndex(currentSegIndexSafe, { end: clampEnd(time) }, historyOptions);
+     }
+     if (type === 'move') {
+       invariant(time != null);
+       updateSegAtIndex(currentSegIndexSafe, {
+         start: clampStart(time),
+         ...(currentCutSeg.end != null && { end: clampEnd(time + (currentCutSeg.end - currentCutSeg.start)) }),
+-      });
++      }, historyOptions);
+     }
+   }, [currentSegIndexSafe, currentCutSeg, fileDuration, updateSegAtIndex]);
+ 
+diff --git a/src/renderer/src/hooks/useStateWithHistory.ts b/src/renderer/src/hooks/useStateWithHistory.ts
+new file mode 100644
+index 00000000..d047787a
+--- /dev/null
++++ b/src/renderer/src/hooks/useStateWithHistory.ts
+@@ -0,0 +1,26 @@
++import { useCallback, useMemo, useState } from 'react';
++
++import type { SetStateWithHistoryOptions } from '../util/history';
++import { createHistory, getCurrentState, pushHistory, redoHistory, undoHistory } from '../util/history';
++
++
++export type SetStateWithHistory<T> = (newStateOrFn: T | ((existing: T) => T), options?: SetStateWithHistoryOptions) => void;
++
++export default function useStateWithHistory<T>(initialState: T, capacity: number) {
++  const [history, setHistory] = useState(() => createHistory(initialState));
++
++  const setState = useCallback<SetStateWithHistory<T>>((newStateOrFn, { coalesceKey } = {}) => {
++    setHistory((existing) => {
++      const newState = typeof newStateOrFn === 'function' ? (newStateOrFn as (a: T) => T)(getCurrentState(existing)) : newStateOrFn;
++      return pushHistory(existing, newState, capacity, coalesceKey);
++    });
++  }, [capacity]);
++
++  const historyControls = useMemo(() => ({
++    back: () => setHistory(undoHistory),
++    forward: () => setHistory(redoHistory),
++    reset: (state: T) => setHistory(createHistory(state)),
++  }), []);
++
++  return [getCurrentState(history), setState, historyControls] as const;
++}
+diff --git a/src/renderer/src/types.ts b/src/renderer/src/types.ts
+index d4c0b9a9..ea443942 100644
+--- a/src/renderer/src/types.ts
++++ b/src/renderer/src/types.ts
+@@ -2,6 +2,7 @@ import type { MenuItem, MenuItemConstructorOptions } from 'electron';
+ import { z } from 'zod';
+ import type { FFprobeChapter, FFprobeFormat, FFprobeStream } from '../../common/ffprobe';
+ import type { FileStream } from './ffmpeg';
++import type { SetStateWithHistoryOptions } from './util/history';
+ 
+ 
+ export interface ChromiumHTMLVideoElement extends HTMLVideoElement {
+@@ -126,7 +127,7 @@ export type ParseTimecode = (val: string) => number | undefined;
+ 
+ export type GetFrameCount = (sec: number) => number | undefined;
+ 
+-export type UpdateSegAtIndex = (index: number, newProps: Partial<StateSegment>) => void;
++export type UpdateSegAtIndex = (index: number, newProps: Partial<StateSegment>, historyOptions?: SetStateWithHistoryOptions) => void;
+ 
+ export type ContextMenuTemplate = (MenuItemConstructorOptions | MenuItem)[];
+ 
+diff --git a/src/renderer/src/util/history.test.ts b/src/renderer/src/util/history.test.ts
+new file mode 100644
+index 00000000..7cec36d2
+--- /dev/null
++++ b/src/renderer/src/util/history.test.ts
+@@ -0,0 +1,63 @@
++import { describe, it, expect } from 'vitest';
++
++import { createHistory, getCurrentState, pushHistory, redoHistory, undoHistory } from './history';
++
++const pushAll = (states: string[], capacity: number) => states.reduce((h, s) => pushHistory(h, s, capacity), createHistory('s0'));
++
++describe('history', () => {
++  it('undoes and redoes', () => {
++    let h = pushAll(['s1', 's2'], 10);
++    expect(getCurrentState(h)).toBe('s2');
++    h = undoHistory(h);
++    expect(getCurrentState(h)).toBe('s1');
++    h = undoHistory(h);
++    expect(getCurrentState(h)).toBe('s0');
++    h = undoHistory(h);
++    expect(getCurrentState(h)).toBe('s0');
++    h = redoHistory(redoHistory(redoHistory(h)));
++    expect(getCurrentState(h)).toBe('s2');
++  });
++
++  it('undoes one step at a time after capacity has been exceeded', () => {
++    let h = pushAll(['s1', 's2', 's3', 's4'], 3);
++    expect(h.entries).toEqual(['s2', 's3', 's4']);
++    h = undoHistory(h);
++    expect(getCurrentState(h)).toBe('s3');
++    h = undoHistory(h);
++    expect(getCurrentState(h)).toBe('s2');
++    h = undoHistory(h);
++    expect(getCurrentState(h)).toBe('s2');
++  });
++
++  it('drops redo entries when a new state is pushed', () => {
++    let h = undoHistory(pushAll(['s1', 's2'], 10));
++    h = pushHistory(h, 'x', 10);
++    expect(h.entries).toEqual(['s0', 's1', 'x']);
++    expect(getCurrentState(redoHistory(h))).toBe('x');
++  });
++
++  it('ignores unchanged state', () => {
++    const h = pushAll(['s1'], 10);
++    expect(pushHistory(h, 's1', 10)).toBe(h);
++  });
++
++  it('coalesces updates with the same key into one undo step', () => {
++    let h = pushAll(['s1'], 10);
++    h = pushHistory(h, 'drag1', 10, 'a');
++    h = pushHistory(h, 'drag2', 10, 'a');
++    h = pushHistory(h, 'drag3', 10, 'a');
++    expect(h.entries).toEqual(['s0', 's1', 'drag3']);
++    expect(getCurrentState(undoHistory(h))).toBe('s1');
++
++    // a different key starts a new step
++    h = pushHistory(h, 'other', 10, 'b');
++    expect(h.entries).toEqual(['s0', 's1', 'drag3', 'other']);
++  });
++
++  it('does not coalesce into an entry reached by undo', () => {
++    let h = pushHistory(pushAll(['s1'], 10), 'drag1', 10, 'a');
++    h = redoHistory(undoHistory(h));
++    h = pushHistory(h, 'drag2', 10, 'a');
++    expect(h.entries).toEqual(['s0', 's1', 'drag1', 'drag2']);
++  });
++});
+diff --git a/src/renderer/src/util/history.ts b/src/renderer/src/util/history.ts
+new file mode 100644
+index 00000000..eefd948a
+--- /dev/null
++++ b/src/renderer/src/util/history.ts
+@@ -0,0 +1,49 @@
++// Pure undo/redo history, used by `useStateWithHistory`.
++// Replaces react-use's useStateWithHistory, which has an off-by-one bug once `capacity` is reached:
++// the position ends up one past the last entry, so the first undo after every edit does nothing.
++
++export interface History<T> {
++  entries: T[],
++  position: number,
++  // set when the current entry was created with a coalesceKey, so that the next update with the same key can be merged into it
++  coalesceKey?: string | undefined,
++}
++
++export interface SetStateWithHistoryOptions {
++  // Successive updates with the same key are merged into a single undo step (e.g. while dragging)
++  coalesceKey?: string | undefined,
++}
++
++export function createHistory<T>(initialState: T): History<T> {
++  return { entries: [initialState], position: 0 };
++}
++
++export const getCurrentState = <T>(history: History<T>) => history.entries[history.position]!;
++
++export function pushHistory<T>(history: History<T>, newState: T, capacity: number, coalesceKey?: string | undefined): History<T> {
++  if (newState === getCurrentState(history)) return history;
++
++  const isAtEnd = history.position === history.entries.length - 1;
++
++  // Merge successive updates with the same key (e.g. while dragging) into a single undo step
++  if (coalesceKey != null && coalesceKey === history.coalesceKey && isAtEnd) {
++    const entries = [...history.entries];
++    entries[history.position] = newState;
++    return { entries, position: history.position, coalesceKey };
++  }
++
++  // drop any redo entries, then add the new one
++  let entries = [...history.entries.slice(0, history.position + 1), newState];
++  if (entries.length > capacity) entries = entries.slice(entries.length - capacity);
++  return { entries, position: entries.length - 1, coalesceKey };
++}
++
++export function undoHistory<T>(history: History<T>): History<T> {
++  if (history.position <= 0) return history;
++  return { entries: history.entries, position: history.position - 1 };
++}
++
++export function redoHistory<T>(history: History<T>): History<T> {
++  if (history.position >= history.entries.length - 1) return history;
++  return { entries: history.entries, position: history.position + 1 };
++}

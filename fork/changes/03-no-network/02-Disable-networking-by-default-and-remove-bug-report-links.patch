@@ -1,0 +1,211 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Sat, 10 Oct 2026 18:55:35 +0000
+Subject: [PATCH] Disable networking by default and remove bug report links
+
+- Networking is now off by default; add --enable-networking to opt in.
+  --disable-networking still works and takes precedence.
+- Remove "report a bug", GitHub discussions/Discord and support email
+  links from the problem report dialog (error details dialog is kept)
+- Regenerate English translation keys for removed strings
+
+Fork-Change: 03-no-network
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_014r72Ms4f4YPmzcdb6AJxQK
+---
+ docs/cli.md                    |  3 ++-
+ locales/en/translation.json    |  9 ---------
+ src/common/constants.ts        |  3 ---
+ src/main/index.ts              |  5 +++--
+ src/main/networking.ts         |  2 +-
+ src/renderer/src/reporting.tsx | 21 ---------------------
+ 6 files changed, 6 insertions(+), 37 deletions(-)
+
+diff --git a/docs/cli.md b/docs/cli.md
+index a31e2c21..c50a4c3e 100644
+--- a/docs/cli.md
++++ b/docs/cli.md
+@@ -45,7 +45,8 @@ LosslessCut --settings-json '{customFfPath:"/path/to/folder/containing/ffmpeg_an
+ ## Other options
+ 
+ - `--locales-path` Customise path to locales (useful for [translators](translation.md)).
+-- `--disable-networking` Make app completely offline (see [#1418](https://github.com/mifi/lossless-cut/issues/1418)).
++- `--enable-networking` Allow the app to make network connections (opening help links in the browser, downloading media from a URL). Networking is **disabled by default**.
++- `--disable-networking` Make app completely offline (see [#1418](https://github.com/mifi/lossless-cut/issues/1418)). This is now the default, and takes precedence over `--enable-networking`.
+ - `--http-api` Start the [HTTP server with an API](api.md) to control LosslessCut, optionally specifying a port (default `8080`).
+ - `--keyboard-action` Run a keyboard action (see below.)
+ - `--config-dir` Path to a directory where the `config.json` file will be stored and loaded from. Note: don't include `config.json` in the path (only the directory containing it).
+diff --git a/locales/en/translation.json b/locales/en/translation.json
+index 38742bfa..dcb9485e 100644
+--- a/locales/en/translation.json
++++ b/locales/en/translation.json
+@@ -14,7 +14,6 @@
+   "<0></0> <2></2>, <4></4> <6></6> or <8><0><0></0></0></8>+<10></10> to set cutpoints": "<0></0> <2></2>, <4></4> <6></6> or <8><0><0></0></0></8>+<10></10> to set cutpoints",
+   "<0></0> to show advanced view": "<0></0> to show advanced view",
+   "<0></0> to show simple view": "<0></0> to show simple view",
+-  "<p>If you're having a problem or question about LosslessCut, please first check the links in the <1>Help</1> menu. If you cannot find any resolution, you may ask a question in <3>GitHub discussions</3> or on <5>Discord.</5></p><p>If you believe that you found a bug in LosslessCut, you may <1>report a bug</1>.</p>": "<p>If you're having a problem or question about LosslessCut, please first check the links in the <1>Help</1> menu. If you cannot find any resolution, you may ask a question in <3>GitHub discussions</3> or on <5>Discord.</5></p><p>If you believe that you found a bug in LosslessCut, you may <1>report a bug</1>.</p>",
+   "⊞ Win": "⊞ Win",
+   "⌘ Cmd": "⌘ Cmd",
+   "1st, 2nd and 3rd track": "1st, 2nd and 3rd track",
+@@ -110,7 +109,6 @@
+   "Change value": "Change value",
+   "Chapters": "Chapters",
+   "Check compatibility": "Check compatibility",
+-  "Check for updates on startup?": "Check for updates on startup",
+   "Choose cutting mode: Remove or keep selected segments from video when exporting?": "Choose cutting mode: Remove or keep selected segments from video when exporting",
+   "Choose directory": "Choose directory",
+   "Cleaning up": "Cleaning up",
+@@ -213,7 +211,6 @@
+   "Don't modify": "Don't modify",
+   "Donate": "Donate",
+   "Done": "Done",
+-  "Download {{version}}": "Download {{version}}",
+   "Downloading URL": "Downloading URL",
+   "DROP FILE(S)": "DROP FILE(S)",
+   "Duplicate current segment": "Duplicate current segment",
+@@ -366,7 +363,6 @@
+   "Frames have been extracted": "Frames have been extracted",
+   "Generating full overview waveform, this may take a few minutes.": "Generating full overview waveform, this may take a few minutes.",
+   "Go": "Go",
+-  "GPS track": "GPS track",
+   "Height": "Height",
+   "Help": "Help",
+   "Hover mouse over buttons in the main interface to see which function they have": "Hover mouse over buttons in the main interface to see which function they have",
+@@ -504,14 +500,12 @@
+   "N/A": "N/A",
+   "Nearest keyframe": "Nearest keyframe",
+   "Never": "Never",
+-  "New version!": "New version!",
+   "Next file": "Next file",
+   "Next keyframe": "Next keyframe",
+   "No": "No",
+   "No binding": "No binding",
+   "No file is loaded": "No file is loaded",
+   "No files found in folder": "No files found in folder",
+-  "No GPS points found": "No GPS points found",
+   "No rows found": "No rows found",
+   "No segment to split. Please move cursor over the segment you want to split": "No segment to split. Please move cursor over the segment you want to split.",
+   "No segments match this expression.": "No segments match this expression.",
+@@ -536,7 +530,6 @@
+   "Open": "Open",
+   "Open file": "Open file",
+   "Open folder": "Open folder",
+-  "Open link in browser": "Open link in browser",
+   "Open media from URL": "Open media from URL",
+   "Open next file": "Open next file",
+   "Open previous file": "Open previous file",
+@@ -593,7 +586,6 @@
+   "Please input a valid size. Example: {{example}}": "Please input a valid size. Example: {{example}}",
+   "Please press your desired key combination. Make sure it doesn't conflict with any other binding or system hotkeys.": "Please press your desired key combination. Make sure it doesn't conflict with any other binding or system hotkeys.",
+   "Please select a working directory first": "Please select a working directory first",
+-  "Please send us an email where you describe what you were doing.": "Please send us an email where you describe what you were doing.",
+   "Please test the output file in your desired player/editor before you delete the source file.": "Please test the output file in your desired player/editor before you delete the source file.",
+   "Please test the output files in your desired player/editor before you delete the source files.": "Please test the output files in your desired player/editor before you delete the source files.",
+   "PotPlayer Bookmarks (.pbf)": "PotPlayer Bookmarks (.pbf)",
+@@ -716,7 +708,6 @@
+   "Show advanced options": "Show advanced options",
+   "Show advanced settings": "Show advanced settings",
+   "Show export options screen before exporting?": "Show export options screen before exporting",
+-  "Show GPS map": "Show GPS map",
+   "Show informational in-app notifications": "Show informational in-app notifications",
+   "Show keyframes": "Show keyframes",
+   "Show notifications": "Show notifications",
+diff --git a/src/common/constants.ts b/src/common/constants.ts
+index fc96689f..0d09c6a5 100644
+--- a/src/common/constants.ts
++++ b/src/common/constants.ts
+@@ -4,15 +4,12 @@ export const getReleaseUrl = (version: string) => `https://github.com/mifi/lossl
+ export const compareReleasesUrl = (fromVersion: string, toVersion: string) => `https://github.com/mifi/lossless-cut/compare/v${fromVersion}...v${toVersion}`;
+ export const licensesUrl = 'https://losslesscut.mifi.no/licenses.txt';
+ export const thanksUrl = 'https://mifi.no/thanks';
+-export const discussionsUrl = 'https://mifi.no/losslesscut/discussions';
+ export const usageUrl = 'https://mifi.no/losslesscut/usage';
+ export const faqUrl = 'https://mifi.no/losslesscut/faq';
+ export const featureRequestUrl = 'https://mifi.no/losslesscut/feature-request';
+-export const publicBugReportUrl = 'https://mifi.no/losslesscut/bug-report';
+ export const troubleshootingUrl = 'https://mifi.no/losslesscut/troubleshooting';
+ // Note: https://github.com/mifi/lossless-cut/blob/master/docs/file-name-template.md used to be https://github.com/mifi/lossless-cut/blob/master/docs.md#custom-exported-file-names
+ export const exportedFileNameTemplateHelpUrl = 'https://mifi.no/losslesscut/file-name-template';
+ export const selectSegmentByExpressionHelpUrl = 'https://mifi.no/losslesscut/select-segments-by-expression';
+ export const editSegmentByExpressionHelpUrl = 'https://mifi.no/losslesscut/edit-segments-by-expression';
+ export const changeEnabledStreamsExpressionHelpUrl = 'https://mifi.no/losslesscut/select-tracks-by-expression';
+-export const supportEmail = 'losslesscut@mifi.no';
+diff --git a/src/main/index.ts b/src/main/index.ts
+index 6b901268..86872ae5 100644
+--- a/src/main/index.ts
++++ b/src/main/index.ts
+@@ -256,7 +256,7 @@ function parseCliArgs(rawArgv = process.argv) {
+   const argsWithoutAppName = rawArgv.length > ignoreFirstArgs ? rawArgv.slice(ignoreFirstArgs) : [];
+ 
+   return yargsParser(argsWithoutAppName, {
+-    boolean: ['disable-networking'],
++    boolean: ['disable-networking', 'enable-networking'],
+     string: ['settings-json', 'config-dir', 'lossy-mode'],
+   });
+ }
+@@ -376,7 +376,8 @@ async function init() {
+     if (filesToOpen.length === 0) filesToOpen = argv._.map(String);
+     const { settingsJson } = argv;
+ 
+-    setDisableNetworking(argv['disableNetworking']);
++    // Networking is disabled by default; opt in with --enable-networking
++    setDisableNetworking(!argv['enableNetworking'] || !!argv['disableNetworking']);
+ 
+     if (settingsJson != null) {
+       logger.info('initializing settings', settingsJson);
+diff --git a/src/main/networking.ts b/src/main/networking.ts
+index 6636527d..40f30dbc 100644
+--- a/src/main/networking.ts
++++ b/src/main/networking.ts
+@@ -1,4 +1,4 @@
+-let disableNetworking: boolean;
++let disableNetworking = true;
+ 
+ export const hasDisabledNetworking = () => !!disableNetworking;
+ 
+diff --git a/src/renderer/src/reporting.tsx b/src/renderer/src/reporting.tsx
+index 7444d901..99cc604a 100644
+--- a/src/renderer/src/reporting.tsx
++++ b/src/renderer/src/reporting.tsx
+@@ -4,8 +4,6 @@ import { Trans } from 'react-i18next';
+ import CopyClipboardButton from './components/CopyClipboardButton';
+ import { isStoreBuild, isMasBuild, isWindowsStoreBuild, isExecaError, appVersion, appPath } from './util';
+ import getSwal from './swal';
+-import { discussionsUrl, githubUrl, publicBugReportUrl, supportEmail } from '../../common/constants';
+-import mainApi from './mainApi';
+ 
+ const remote = window.require('@electron/remote');
+ const { platform, arch } = remote.require('./index.js');
+@@ -18,23 +16,6 @@ export function openSendReportDialog({ err, message, state }: {
+   message?: string,
+   state?: unknown,
+ }) {
+-  const reportInstructions = isStoreBuild
+-    ? (
+-      <>
+-        <p>{i18n.t('Please send us an email where you describe what you were doing.')}</p>
+-        <p><span className="link-button" role="button" onClick={() => mainApi.openExternal(`mailto:${supportEmail}`)}>{supportEmail}</span></p>
+-      </>
+-    ) : (
+-      <Trans>
+-        <p>
+-          If you&apos;re having a problem or question about LosslessCut, please first check the links in the <b>Help</b> menu. If you cannot find any resolution, you may ask a question in <span className="link-button" role="button" onClick={() => mainApi.openExternal(discussionsUrl)}>GitHub discussions</span> or on <span className="link-button" role="button" onClick={() => mainApi.openExternal(githubUrl)}>Discord.</span>
+-        </p>
+-        <p>
+-          If you believe that you found a bug in LosslessCut, you may <span className="link-button" role="button" onClick={() => mainApi.openExternal(publicBugReportUrl)}>report a bug</span>.
+-        </p>
+-      </Trans>
+-    );
+-
+   const errorText = (() => {
+     if (err == null) return 'No error occurred.';
+     return err instanceof Error ? err.stack : String(err);
+@@ -78,8 +59,6 @@ export function openSendReportDialog({ err, message, state }: {
+     showConfirmButton: false,
+     html: (
+       <div style={{ textAlign: 'left', overflow: 'auto', maxHeight: 300, overflowY: 'auto' }}>
+-        {reportInstructions}
+-
+         <p style={{ marginBottom: 0 }}><Trans>Include the following text:</Trans> <CopyClipboardButton text={text} /></p>
+ 
+         {!isStoreBuild && <p style={{ marginTop: '.2em', fontSize: '.8em', opacity: 0.7 }}><Trans>You might want to redact any sensitive information like paths.</Trans></p>}

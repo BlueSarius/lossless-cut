@@ -1,0 +1,907 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Sat, 10 Oct 2026 18:51:01 +0000
+Subject: [PATCH] Remove outbound network connections
+
+- Remove GitHub update checker (api.github.com), its setting toggle and
+  "New version!" menu
+- Remove startup fetch of losslesscut.mifi.no/config.json and the
+  iframe banner on the start screen
+- Remove store-build app path/title reporting to
+  losslesscut-analytics.mifi.no
+- Remove GPS track map (OpenStreetMap tiles) and its now-unused
+  parsers, tests and dependencies (leaflet, react-leaflet, @octokit/core)
+
+Fork-Change: 03-no-network
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_014r72Ms4f4YPmzcdb6AJxQK
+---
+ package.json                                  |  5 -
+ script/checkLicenses.ts                       |  1 -
+ src/common/types.ts                           |  1 -
+ src/main/configStore.ts                       |  1 -
+ src/main/index.ts                             | 12 +--
+ src/main/menu.ts                              | 17 +---
+ src/main/updateChecker.ts                     | 43 ---------
+ src/renderer/src/App.tsx                      | 13 +--
+ src/renderer/src/BottomBar.tsx                |  6 +-
+ src/renderer/src/NoFileLoaded.tsx             | 12 +--
+ src/renderer/src/StreamsSelector.tsx          | 31 +-----
+ .../src/__snapshots__/edlFormats.test.ts.snap | 42 ---------
+ src/renderer/src/components/GpsMap.tsx        | 94 -------------------
+ src/renderer/src/components/Settings.tsx      | 13 +--
+ src/renderer/src/dialogs/index.tsx            | 45 +--------
+ src/renderer/src/edlFormats.test.ts           | 17 +---
+ src/renderer/src/edlFormats.ts                | 51 ----------
+ src/renderer/src/ffmpeg.ts                    |  7 +-
+ src/renderer/src/hooks/useUserSettingsRoot.ts |  4 -
+ src/renderer/src/mifi.ts                      | 14 +--
+ src/renderer/src/util/streams.ts              |  2 -
+ 21 files changed, 18 insertions(+), 413 deletions(-)
+ delete mode 100644 src/main/updateChecker.ts
+ delete mode 100644 src/renderer/src/components/GpsMap.tsx
+
+diff --git a/package.json b/package.json
+index 121d3070..c956a456 100644
+--- a/package.json
++++ b/package.json
+@@ -46,7 +46,6 @@
+   "license": "GPL-2.0-only",
+   "devDependencies": {
+     "@actions/artifact": "^6.2.1",
+-    "@adamscybot/react-leaflet-component-marker": "^2.0.3",
+     "@dnd-kit/core": "^6.3.1",
+     "@dnd-kit/modifiers": "^9.0.0",
+     "@dnd-kit/sortable": "^10.0.0",
+@@ -67,7 +66,6 @@
+     "@types/css-modules": "^1.0.5",
+     "@types/eslint": "^8.56.12",
+     "@types/express": "^5.0.6",
+-    "@types/leaflet": "^1.9.21",
+     "@types/lodash": "^4.17.24",
+     "@types/lodash.debounce": "^4.0.9",
+     "@types/luxon": "^3.7.1",
+@@ -104,7 +102,6 @@
+     "i18next-cli": "^1.58.1",
+     "immer": "^11.1.8",
+     "ky": "^2.0.2",
+-    "leaflet": "^1.9.4",
+     "lodash": "^4.18.1",
+     "luxon": "^3.7.2",
+     "mkdirp": "^3.0.1",
+@@ -117,7 +114,6 @@
+     "react-dom": "^19.2.6",
+     "react-i18next": "^17.0.8",
+     "react-icons": "^5.6.0",
+-    "react-leaflet": "^5.0.0",
+     "react-lottie-player": "^2.1.0",
+     "react-markdown": "^10.1.0",
+     "react-syntax-highlighter": "^16.1.1",
+@@ -140,7 +136,6 @@
+   },
+   "dependencies": {
+     "@electron/remote": "^2.1.3",
+-    "@octokit/core": "7.0.6",
+     "cue-parser": "^0.3.0",
+     "electron-devtools-installer": "^4.0.0",
+     "electron-store": "5.1.1",
+diff --git a/script/checkLicenses.ts b/script/checkLicenses.ts
+index 49b9eef7..b7202c33 100644
+--- a/script/checkLicenses.ts
++++ b/script/checkLicenses.ts
+@@ -33,7 +33,6 @@ const safeLicenses: Record<string, true | string[]> = {
+   'MPL-2.0': true,
+ 
+   // Special purpose licenses
+-  'Hippocratic-2.1': ['@react-leaflet/core', 'react-leaflet'],
+ 
+   // not software licenses
+   'CC-BY-3.0': ['spdx-exceptions'], // eslint-plugin-unicorn
+diff --git a/src/common/types.ts b/src/common/types.ts
+index cdcc71c8..117cdb11 100644
+--- a/src/common/types.ts
++++ b/src/common/types.ts
+@@ -100,7 +100,6 @@ export interface Config {
+   captureFrameQuality: number,
+   captureFrameFileNameFormat: 'timestamp' | 'index',
+   enableNativeHevc: boolean,
+-  enableUpdateCheck: boolean,
+   cleanupChoices: {
+     trashTmpFiles: boolean, askForCleanup: boolean, closeFile: boolean, cleanupAfterExport?: boolean | undefined,
+   },
+diff --git a/src/main/configStore.ts b/src/main/configStore.ts
+index 58a495de..62c97dae 100644
+--- a/src/main/configStore.ts
++++ b/src/main/configStore.ts
+@@ -155,7 +155,6 @@ const defaults: Config = {
+   captureFrameQuality: 0.95,
+   captureFrameFileNameFormat: 'timestamp',
+   enableNativeHevc: true,
+-  enableUpdateCheck: true,
+   cleanupChoices: {
+     trashTmpFiles: true, askForCleanup: true, closeFile: true, cleanupAfterExport: false,
+   },
+diff --git a/src/main/index.ts b/src/main/index.ts
+index cf02de1b..6b901268 100644
+--- a/src/main/index.ts
++++ b/src/main/index.ts
+@@ -31,7 +31,6 @@ import HttpServer from './httpServer.js';
+ import isDev from './isDev.js';
+ import isStoreBuild from './isStoreBuild.js';
+ import { getAboutPanelOptions } from './aboutPanel.js';
+-import { checkNewVersion } from './updateChecker.js';
+ import * as i18nCommon from './i18nCommon.js';
+ import './i18n.js';
+ import type { ApiActionRequest } from '../common/types.js';
+@@ -68,7 +67,6 @@ let mainWindow: BrowserWindow | null;
+ 
+ let askBeforeClose = false;
+ let rendererReady = false;
+-let newVersion: string | undefined;
+ 
+ const openFiles = (paths: string[]) => mainWindow!.webContents.send('openFiles', paths);
+ 
+@@ -228,7 +226,7 @@ async function openExternal(url: string) {
+ 
+ function updateMenu() {
+   assert(mainWindow);
+-  menu({ app, mainWindow, newVersion, isStoreBuild, openExternal });
++  menu({ app, mainWindow, isStoreBuild, openExternal });
+ }
+ 
+ async function changeLanguage(language: string | null) {
+@@ -408,14 +406,6 @@ async function init() {
+     createWindow();
+     // will also updateMenu and set about panel options
+     await changeLanguage(language);
+-
+-    const enableUpdateCheck = configStore.get('enableUpdateCheck');
+-
+-    if (!hasDisabledNetworking() && enableUpdateCheck && !isStoreBuild) {
+-      newVersion = await checkNewVersion();
+-      // newVersion = '1.2.3';
+-      if (newVersion) updateMenu();
+-    }
+   } catch (err) {
+     logger.error('Failed to initialize', err);
+   }
+diff --git a/src/main/menu.ts b/src/main/menu.ts
+index 703f61ba..0848f29c 100644
+--- a/src/main/menu.ts
++++ b/src/main/menu.ts
+@@ -3,7 +3,7 @@ import type { BrowserWindow, MenuItem, MenuItemConstructorOptions } from 'electr
+ import electron from 'electron';
+ import { t } from 'i18next';
+ 
+-import { homepageUrl, getReleaseUrl, licensesUrl, thanksUrl, usageUrl, faqUrl, troubleshootingUrl, featureRequestUrl, githubUrl } from '../common/constants.js';
++import { homepageUrl, licensesUrl, thanksUrl, usageUrl, faqUrl, troubleshootingUrl, featureRequestUrl, githubUrl } from '../common/constants.js';
+ import { logFilePath } from './logger.js';
+ import { getConfigPath } from './configStore.js';
+ 
+@@ -14,10 +14,9 @@ const esc = (val: string) => val.replaceAll('&', '&&');
+ 
+ const { Menu } = electron;
+ 
+-export default ({ app, mainWindow, newVersion, isStoreBuild, openExternal }: {
++export default ({ app, mainWindow, isStoreBuild, openExternal }: {
+   app: Electron.App,
+   mainWindow: BrowserWindow,
+-  newVersion?: string | undefined,
+   isStoreBuild: boolean,
+   openExternal: (url: string) => void,
+ }) => {
+@@ -507,17 +506,5 @@ export default ({ app, mainWindow, newVersion, isStoreBuild, openExternal }: {
+     },
+   ];
+ 
+-  if (!isStoreBuild && newVersion) {
+-    menu.push({
+-      label: esc(t('New version!')),
+-      submenu: [
+-        {
+-          label: esc(t('Download {{version}}', { version: newVersion })),
+-          click() { openExternal(getReleaseUrl(newVersion)); },
+-        },
+-      ],
+-    });
+-  }
+-
+   Menu.setApplicationMenu(Menu.buildFromTemplate(menu));
+ };
+diff --git a/src/main/updateChecker.ts b/src/main/updateChecker.ts
+deleted file mode 100644
+index f010437b..00000000
+--- a/src/main/updateChecker.ts
++++ /dev/null
+@@ -1,43 +0,0 @@
+-// eslint-disable-next-line import/no-extraneous-dependencies
+-import electron from 'electron';
+-import semver from 'semver';
+-import { Octokit } from '@octokit/core';
+-
+-import logger from './logger.js';
+-
+-
+-const { app } = electron;
+-
+-const octokit = new Octokit();
+-
+-
+-// eslint-disable-next-line import/prefer-default-export
+-export async function checkNewVersion() {
+-  try {
+-    // From API: https://developer.github.com/v3/repos/releases/#get-the-latest-release
+-    // View the latest published full release for the repository.
+-    // Draft releases and prereleases are not returned by this endpoint.
+-
+-    const { data } = await octokit.request('GET /repos/{owner}/{repo}/releases/latest', {
+-      owner: 'mifi',
+-      repo: 'lossless-cut',
+-      headers: {
+-        'X-GitHub-Api-Version': '2022-11-28',
+-      },
+-    });
+-
+-    const newestVersion = data.tag_name.replace(/^v?/, '');
+-
+-    const currentVersion = app.getVersion();
+-    // const currentVersion = '3.17.2';
+-
+-    logger.info('Current version', currentVersion);
+-    logger.info('Newest version', newestVersion);
+-
+-    if (semver.lt(currentVersion, newestVersion)) return newestVersion;
+-    return undefined;
+-  } catch (err) {
+-    logger.error('Failed to check github version', err instanceof Error ? err.message : String(err));
+-    return undefined;
+-  }
+-}
+diff --git a/src/renderer/src/App.tsx b/src/renderer/src/App.tsx
+index 561a4555..d459d80f 100644
+--- a/src/renderer/src/App.tsx
++++ b/src/renderer/src/App.tsx
+@@ -49,7 +49,7 @@ import Working from './components/Working';
+ import OutputFormatSelect from './components/OutputFormatSelect';
+ import * as Dialog from './components/Dialog';
+ 
+-import { loadMifiLink, runStartupCheck } from './mifi';
++import { runStartupCheck } from './mifi';
+ import { darkModeTransition } from './colors';
+ import { getSegColor } from './util/colors';
+ import type {
+@@ -69,7 +69,7 @@ import { exportEdlFile, readEdlFile, loadLlcProject, askForEdlImport } from './e
+ import { formatYouTube, getFrameCountRaw, formatTsvHuman } from './edlFormats';
+ import {
+   getOutPath, getOutDir,
+-  isStoreBuild, dragPreventer,
++  dragPreventer,
+   havePermissionToReadFile, resolvePathIfNeeded, getPathReadAccessError, findExistingHtml5FriendlyFile,
+   isOutOfSpaceError, readFileSize, readFileSizes, checkFileSizes, setDocumentTitle, readVideoTs, readDirRecursively, getImportProjectType,
+   calcShouldShowWaveform, calcShouldShowKeyframes, mediaSourceQualities, isExecaError, getStdioString,
+@@ -126,7 +126,7 @@ import { appName } from '../../main/common.js';
+ const { ipcRenderer, webUtils } = window.require('electron');
+ const { lstat } = window.require('node:fs/promises');
+ const { parse: parsePath, join: pathJoin, basename, dirname } = window.require('node:path');
+-const { hasDisabledNetworking, pathToFileURL, lossyMode, isLinux } = window.require('@electron/remote').require('./index.js');
++const { pathToFileURL, lossyMode, isLinux } = window.require('@electron/remote').require('./index.js');
+ 
+ 
+ const hevcPlaybackSupportedPromise = doesPlayerSupportHevcPlayback();
+@@ -174,7 +174,6 @@ function App() {
+   const [settingsVisible, setSettingsVisible] = useState(false);
+   const [tunerVisible, setTunerVisible] = useState<TunerType>();
+   const [keyboardShortcutsVisible, setKeyboardShortcutsVisible] = useState(false);
+-  const [mifiLink, setMifiLink] = useState<unknown>();
+   const [alwaysConcatMultipleFiles, setAlwaysConcatMultipleFiles] = useState(false);
+   const [editingSegmentTagsSegmentIndex, setEditingSegmentTagsSegmentIndex] = useState<number>();
+   const [editingSegmentTags, setEditingSegmentTags] = useState<SegmentTags>();
+@@ -2481,10 +2480,6 @@ function App() {
+     }
+   }, [setWaveformMode]);
+ 
+-  useEffect(() => {
+-    if (!isStoreBuild && !hasDisabledNetworking()) loadMifiLink().then(setMifiLink);
+-  }, []);
+-
+   useEffect(() => {
+     (async () => {
+       setFfmpegInfo(await runStartupCheck({ customFfPath, onError: ({ title, message }) => setGenericError({ title, err: message }) }));
+@@ -2564,7 +2559,7 @@ function App() {
+ 
+                   {/* Middle part (also shown in fullscreen): */}
+                   <div style={{ position: 'relative', flexGrow: 1, overflow: 'hidden' }} ref={videoContainerRef}>
+-                    {!isFileOpened && <NoFileLoaded mifiLink={mifiLink} currentCutSeg={currentCutSeg} onClick={openFilesDialog} darkMode={darkMode} keyBindingByAction={keyBindingByAction} />}
++                    {!isFileOpened && <NoFileLoaded currentCutSeg={currentCutSeg} onClick={openFilesDialog} keyBindingByAction={keyBindingByAction} />}
+ 
+                     <div className="no-user-select" style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, visibility: !isFileOpened || !hasVideo || bigWaveformEnabled ? 'hidden' : undefined }} onWheel={onTimelineWheel}>
+                       {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
+diff --git a/src/renderer/src/BottomBar.tsx b/src/renderer/src/BottomBar.tsx
+index 7d875d6a..e206b157 100644
+--- a/src/renderer/src/BottomBar.tsx
++++ b/src/renderer/src/BottomBar.tsx
+@@ -25,7 +25,7 @@ import { useSegColors } from './contexts';
+ import { isExactDurationMatch } from './util/duration';
+ import useUserSettings from './hooks/useUserSettings';
+ import useActionTitle from './hooks/useActionTitle';
+-import { askForPlaybackRate, checkAppPath } from './dialogs';
++import { askForPlaybackRate } from './dialogs';
+ import type { FormatTimecode, GetFrameCount, ParseTimecode, PlaybackMode, SegmentColorIndex, SegmentToExport, StateSegment } from './types';
+ import type { WaveformMode } from '../../common/types';
+ import type { Frame } from './ffmpeg';
+@@ -378,10 +378,6 @@ function BottomBar({
+ 
+   const rotationStr = `${rotation}°`;
+ 
+-  useEffect(() => {
+-    checkAppPath();
+-  }, []);
+-
+   const handleChangePlaybackRateClick = useCallback(async () => {
+     const newRate = await askForPlaybackRate({ detectedFps, outputPlaybackRate });
+     if (newRate != null) setOutputPlaybackRate(newRate);
+diff --git a/src/renderer/src/NoFileLoaded.tsx b/src/renderer/src/NoFileLoaded.tsx
+index 361552dc..5897e6ba 100644
+--- a/src/renderer/src/NoFileLoaded.tsx
++++ b/src/renderer/src/NoFileLoaded.tsx
+@@ -12,7 +12,6 @@ import type { KeyBinding } from '../../common/types';
+ import { splitKeyboardKeys } from './util';
+ import { getModifier } from './hooks/useTimelineScroll';
+ import Kbd from './components/Kbd';
+-import mainApi from './mainApi';
+ 
+ 
+ function Keys({ keys }: { keys: string | undefined }) {
+@@ -43,11 +42,9 @@ const dropzoneStyle: MotionStyle = {
+   borderColor: 'var(--gray-3)',
+ };
+ 
+-function NoFileLoaded({ mifiLink, currentCutSeg, onClick, darkMode, keyBindingByAction }: {
+-  mifiLink: unknown,
++function NoFileLoaded({ currentCutSeg, onClick, keyBindingByAction }: {
+   currentCutSeg: StateSegment | undefined,
+   onClick: () => void,
+-  darkMode?: boolean,
+   keyBindingByAction: Record<string, KeyBinding>,
+ }) {
+   const { t } = useTranslation();
+@@ -84,13 +81,6 @@ function NoFileLoaded({ mifiLink, currentCutSeg, onClick, darkMode, keyBindingBy
+         )}
+       </div>
+ 
+-      {mifiLink && typeof mifiLink === 'object' && 'loadUrl' in mifiLink && typeof mifiLink.loadUrl === 'string' && mifiLink.loadUrl ? (
+-        <div style={{ position: 'relative', margin: '.3em', width: '24em', height: '8em' }}>
+-          <iframe src={`${mifiLink.loadUrl}#dark=${darkMode ? 'true' : 'false'}`} title="iframe" style={{ background: 'rgba(0,0,0,0)', border: 'none', pointerEvents: 'none', width: '100%', height: '100%', position: 'absolute', colorScheme: 'initial' }} />
+-          {/* eslint-disable-next-line jsx-a11y/interactive-supports-focus */}
+-          <div style={{ width: '100%', height: '100%', position: 'absolute', cursor: 'pointer' }} title={t('Open link in browser')} role="button" onClick={(e) => { e.stopPropagation(); if ('targetUrl' in mifiLink && typeof mifiLink.targetUrl === 'string') mainApi.openExternal(mifiLink.targetUrl); }} />
+-        </div>
+-      ) : undefined}
+     </motion.div>
+   );
+ }
+diff --git a/src/renderer/src/StreamsSelector.tsx b/src/renderer/src/StreamsSelector.tsx
+index 09f0eec5..274a2557 100644
+--- a/src/renderer/src/StreamsSelector.tsx
++++ b/src/renderer/src/StreamsSelector.tsx
+@@ -1,10 +1,10 @@
+ import type { Dispatch, SetStateAction, CSSProperties, ReactNode, ChangeEventHandler, DragEventHandler } from 'react';
+ import { memo, useState, useMemo, useCallback } from 'react';
+ 
+-import { FaImage, FaPaperclip, FaVideo, FaVideoSlash, FaFileImport, FaVolumeUp, FaVolumeMute, FaBan, FaFileExport, FaBook, FaInfoCircle, FaFilter, FaEye, FaEdit, FaTrash, FaSortNumericDown, FaSortNumericUp, FaHamburger, FaMap, FaLanguage } from 'react-icons/fa';
++import { FaImage, FaPaperclip, FaVideo, FaVideoSlash, FaFileImport, FaVolumeUp, FaVolumeMute, FaBan, FaFileExport, FaBook, FaInfoCircle, FaFilter, FaEye, FaEdit, FaTrash, FaSortNumericDown, FaSortNumericUp, FaHamburger, FaLanguage } from 'react-icons/fa';
+ import { GoFileBinary } from 'react-icons/go';
+ import { MdSubtitles } from 'react-icons/md';
+-import { useTranslation, Trans } from 'react-i18next';
++import { useTranslation } from 'react-i18next';
+ import prettyBytes from 'pretty-bytes';
+ import { Tabs, TextField } from '@radix-ui/themes';
+ import { produce } from 'immer';
+@@ -15,14 +15,13 @@ import AutoExportToggler from './components/AutoExportToggler';
+ import Select from './components/Select';
+ import type { FileStream } from './ffmpeg';
+ import { getStreamFps } from './ffmpeg';
+-import { getActiveDisposition, attachedPicDisposition, isGpsStream } from './util/streams';
++import { getActiveDisposition, attachedPicDisposition } from './util/streams';
+ import TagEditor from './components/TagEditor';
+ import type { FFprobeChapter, FFprobeFormat, FFprobeStream } from '../../common/ffprobe';
+ import { contentDispositionOptionsSchema, deleteDispositionValue, dispositionOptions, type ContentDispositionOptions, type FileParams, type FilesMeta, type FormatTimecode, type ParamsByFile, type StreamParams } from './types';
+ import Button, { DialogButton } from './components/Button';
+ import styles from './StreamsSelector.module.css';
+ import Json5Dialog from './components/Json5Dialog';
+-import GpsMap from './components/GpsMap';
+ import Switch from './components/Switch';
+ 
+ 
+@@ -512,30 +511,6 @@ const Stream = memo(({ filePath, stream, onToggle, toggleCopyStreamIds, copyStre
+                 </DropdownMenu.Item>
+               )}
+ 
+-              {isGpsStream(stream) && (
+-                <Dialog.Root>
+-                  <Dialog.Trigger asChild>
+-                    {/* https://github.com/radix-ui/primitives/issues/1836#issuecomment-1674338372 */}
+-                    <DropdownMenu.Item onSelect={(e) => e.preventDefault()}>
+-                      <FaMap style={{ marginRight: '.3em' }} />
+-                      {t('Show GPS map')}
+-                    </DropdownMenu.Item>
+-                  </Dialog.Trigger>
+-
+-                  <Dialog.Portal>
+-                    <Dialog.Overlay />
+-
+-                    <Dialog.Content aria-describedby={undefined}>
+-                      <Dialog.Title>
+-                        <Trans>GPS track</Trans>
+-                      </Dialog.Title>
+-
+-                      <GpsMap filePath={filePath} streamIndex={stream.index} />
+-                    </Dialog.Content>
+-                  </Dialog.Portal>
+-                </Dialog.Root>
+-              )}
+-
+               <DropdownMenu.Separator />
+ 
+               <DropdownMenu.Item onClick={() => toggleCopyStreamIds((s) => s.codec_type === stream.codec_type)}>
+diff --git a/src/renderer/src/__snapshots__/edlFormats.test.ts.snap b/src/renderer/src/__snapshots__/edlFormats.test.ts.snap
+index 241b3fae..9cda59e9 100644
+--- a/src/renderer/src/__snapshots__/edlFormats.test.ts.snap
++++ b/src/renderer/src/__snapshots__/edlFormats.test.ts.snap
+@@ -71,48 +71,6 @@ exports[`otio 1`] = `
+ ]
+ `;
+ 
+-exports[`parseDjiGps1 1`] = `
+-{
+-  "alt": 19,
+-  "distance": 67.78,
+-  "dzoom": undefined,
+-  "ev": -1,
+-  "f": "F/2.8",
+-  "height": 20.3,
+-  "horizontalSpeed": 1.03,
+-  "iso": 100,
+-  "lat": 67.9771,
+-  "lng": 15.0732,
+-  "ss": 776.89,
+-  "verticalSpeed": 0,
+-}
+-`;
+-
+-exports[`parseDjiGps1 2`] = `
+-{
+-  "alt": 26,
+-  "distance": 0.57,
+-  "dzoom": 1,
+-  "ev": 0,
+-  "f": "F/2.8",
+-  "height": 102.4,
+-  "horizontalSpeed": 0,
+-  "iso": 100,
+-  "lat": 56.5019,
+-  "lng": -3.913,
+-  "ss": 678.52,
+-  "verticalSpeed": -0,
+-}
+-`;
+-
+-exports[`parseDjiGps2 1`] = `
+-{
+-  "altitude": 1245.046,
+-  "lat": 62.229033,
+-  "lng": 6.552877,
+-}
+-`;
+-
+ exports[`parses DV Analyzer Summary.txt 1`] = `
+ [
+   {
+diff --git a/src/renderer/src/components/GpsMap.tsx b/src/renderer/src/components/GpsMap.tsx
+deleted file mode 100644
+index 4fbf1323..00000000
+--- a/src/renderer/src/components/GpsMap.tsx
++++ /dev/null
+@@ -1,94 +0,0 @@
+-import { useEffect, useState } from 'react';
+-import { MapContainer, Popup, TileLayer } from 'react-leaflet';
+-import { Marker } from '@adamscybot/react-leaflet-component-marker';
+-import 'leaflet/dist/leaflet.css';
+-import { FaMapMarkerAlt } from 'react-icons/fa';
+-import i18n from 'i18next';
+-
+-import { extractSrtGpsTrack } from '../ffmpeg';
+-import { parseDjiGps1, parseDjiGps2 } from '../edlFormats';
+-import * as Dialog from './Dialog';
+-import { useAppContext } from '../contexts';
+-import { UserFacingError } from '../../errors';
+-
+-
+-// https://www.openstreetmap.org/copyright
+-
+-async function getGpsTrack({ filePath, streamIndex }: { filePath: string, streamIndex: number }) {
+-  const subtitles = await extractSrtGpsTrack(filePath, streamIndex);
+-  return subtitles.flatMap((subtitle) => {
+-    const { index } = subtitle;
+-    if (index == null) return [];
+-
+-    const parsed = parseDjiGps1(subtitle.lines) ?? parseDjiGps2(subtitle.lines);
+-    if (parsed == null) return [];
+-
+-    return [{
+-      ...parsed,
+-      index,
+-      raw: subtitle.lines,
+-    }];
+-  });
+-}
+-
+-export default function GpsMap({ filePath, streamIndex }: {
+-  filePath: string,
+-  streamIndex: number,
+-}) {
+-  const { handleError } = useAppContext();
+-  const [points, setPoints] = useState<Awaited<ReturnType<typeof getGpsTrack>>>();
+-
+-  useEffect(() => {
+-    (async () => {
+-      try {
+-        const allGpsPoints = await getGpsTrack({ filePath, streamIndex });
+-
+-        // limit number of points, or else severe map slowdown
+-        const maxPointsToShow = 500;
+-        let gpsPoints = allGpsPoints;
+-        if (allGpsPoints.length > maxPointsToShow) {
+-          gpsPoints = Array.from({ length: maxPointsToShow }).flatMap((_, i) => {
+-            const p = allGpsPoints[Math.floor(i * (allGpsPoints.length / maxPointsToShow))];
+-            return p != null ? [p] : [];
+-          });
+-        }
+-
+-        if (gpsPoints.length === 0) {
+-          throw new UserFacingError(i18n.t('No GPS points found'));
+-        }
+-
+-        setPoints(gpsPoints);
+-      } catch (err) {
+-        handleError({ err });
+-      }
+-    })();
+-  }, [filePath, handleError, streamIndex]);
+-
+-  const firstPoint = points?.[0];
+-
+-  if (points == null || firstPoint == null) {
+-    return null;
+-  }
+-
+-  return (
+-    <div style={{ width: '80vw', height: '60vh' }}>
+-      <MapContainer center={[firstPoint.lat, firstPoint.lng]} zoom={16} style={{ width: '100%', height: '100%' }}>
+-        <TileLayer
+-          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+-          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+-        />
+-
+-        {points.map((point, i) => (
+-          <Marker key={point.index} position={[point.lat, point.lng]} icon={<FaMapMarkerAlt color="#af0e0e" size={20} />}>
+-            <Popup>
+-              <div>Point {i + 1} / {points.length}</div>
+-              {point.raw}
+-            </Popup>
+-          </Marker>
+-        ))}
+-      </MapContainer>
+-
+-      <Dialog.CloseButton />
+-    </div>
+-  );
+-}
+diff --git a/src/renderer/src/components/Settings.tsx b/src/renderer/src/components/Settings.tsx
+index 2c3e6ce5..d195a85e 100644
+--- a/src/renderer/src/components/Settings.tsx
++++ b/src/renderer/src/components/Settings.tsx
+@@ -10,7 +10,7 @@ import AutoExportToggler from './AutoExportToggler';
+ import Switch from './Switch';
+ import useUserSettings from '../hooks/useUserSettings';
+ import { askForFfPath } from '../dialogs';
+-import { getEnableImportChaptersOptions, isMasBuild, isStoreBuild } from '../util';
++import { getEnableImportChaptersOptions, isMasBuild } from '../util';
+ import type { SupportedLanguage } from '../../../common/i18n';
+ import { langNames } from '../../../common/i18n';
+ import type { Config, EnableImportChapters, ModifierKey, TimecodeFormat } from '../../../common/types.js';
+@@ -75,7 +75,7 @@ function Settings({
+ }) {
+   const { t } = useTranslation();
+ 
+-  const { customOutDir, keyframeCut, toggleKeyframeCut, timecodeFormat, setTimecodeFormat, invertCutSegments, setInvertCutSegments, askBeforeClose, setAskBeforeClose, enableImportChapters, setEnableImportChapters, enableAskForFileOpenAction, setEnableAskForFileOpenAction, autoSaveProjectFile, setAutoSaveProjectFile, invertTimelineScroll, setInvertTimelineScroll, language, setLanguage, hideNotifications, setHideNotifications, hideOsNotifications, setHideOsNotifications, autoLoadTimecode, setAutoLoadTimecode, enableAutoHtml5ify, setEnableAutoHtml5ify, customFfPath, setCustomFfPath, storeProjectInWorkingDir, mouseWheelZoomModifierKey, setMouseWheelZoomModifierKey, mouseWheelFrameSeekModifierKey, setMouseWheelFrameSeekModifierKey, mouseWheelKeyframeSeekModifierKey, setMouseWheelKeyframeSeekModifierKey, segmentMouseModifierKey, setSegmentMouseModifierKey, captureFrameMethod, setCaptureFrameMethod, captureFrameQuality, setCaptureFrameQuality, captureFrameFileNameFormat, setCaptureFrameFileNameFormat, enableNativeHevc, setEnableNativeHevc, enableUpdateCheck, setEnableUpdateCheck, allowMultipleInstances, setAllowMultipleInstances, preferStrongColors, setPreferStrongColors, treatInputFileModifiedTimeAsStart, setTreatInputFileModifiedTimeAsStart, treatOutputFileModifiedTimeAsStart, setTreatOutputFileModifiedTimeAsStart, exportConfirmEnabled, toggleExportConfirmEnabled, storeWindowBounds, setStoreWindowBounds, reducedMotion, setReducedMotion, ffmpegHwaccel, setFfmpegHwaccel } = useUserSettings();
++  const { customOutDir, keyframeCut, toggleKeyframeCut, timecodeFormat, setTimecodeFormat, invertCutSegments, setInvertCutSegments, askBeforeClose, setAskBeforeClose, enableImportChapters, setEnableImportChapters, enableAskForFileOpenAction, setEnableAskForFileOpenAction, autoSaveProjectFile, setAutoSaveProjectFile, invertTimelineScroll, setInvertTimelineScroll, language, setLanguage, hideNotifications, setHideNotifications, hideOsNotifications, setHideOsNotifications, autoLoadTimecode, setAutoLoadTimecode, enableAutoHtml5ify, setEnableAutoHtml5ify, customFfPath, setCustomFfPath, storeProjectInWorkingDir, mouseWheelZoomModifierKey, setMouseWheelZoomModifierKey, mouseWheelFrameSeekModifierKey, setMouseWheelFrameSeekModifierKey, mouseWheelKeyframeSeekModifierKey, setMouseWheelKeyframeSeekModifierKey, segmentMouseModifierKey, setSegmentMouseModifierKey, captureFrameMethod, setCaptureFrameMethod, captureFrameQuality, setCaptureFrameQuality, captureFrameFileNameFormat, setCaptureFrameFileNameFormat, enableNativeHevc, setEnableNativeHevc, allowMultipleInstances, setAllowMultipleInstances, preferStrongColors, setPreferStrongColors, treatInputFileModifiedTimeAsStart, setTreatInputFileModifiedTimeAsStart, treatOutputFileModifiedTimeAsStart, setTreatOutputFileModifiedTimeAsStart, exportConfirmEnabled, toggleExportConfirmEnabled, storeWindowBounds, setStoreWindowBounds, reducedMotion, setReducedMotion, ffmpegHwaccel, setFfmpegHwaccel } = useUserSettings();
+ 
+   const onLangChange = useCallback<ChangeEventHandler<HTMLSelectElement>>((e) => {
+     const { value } = e.target;
+@@ -199,15 +199,6 @@ function Settings({
+           </Row>
+         )}
+ 
+-        {showAdvancedSettings && !isStoreBuild && (
+-          <Row>
+-            <KeyCell>{t('Check for updates on startup?')}</KeyCell>
+-            <td>
+-              <Switch checked={enableUpdateCheck} onCheckedChange={setEnableUpdateCheck} />
+-            </td>
+-          </Row>
+-        )}
+-
+         {showAdvancedSettings && (
+           <Row>
+             <KeyCell>{t('Allow multiple instances of LosslessCut to run concurrently? (experimental)')}</KeyCell>
+diff --git a/src/renderer/src/dialogs/index.tsx b/src/renderer/src/dialogs/index.tsx
+index 400b6593..cdfef353 100644
+--- a/src/renderer/src/dialogs/index.tsx
++++ b/src/renderer/src/dialogs/index.tsx
+@@ -3,17 +3,15 @@ import i18n from 'i18next';
+ import { Trans } from 'react-i18next';
+ import invariant from 'tiny-invariant';
+ import { FaArrowRight, FaExclamationTriangle, FaInfoCircle, FaQuestionCircle } from 'react-icons/fa';
+-import ky from 'ky';
+ import pMap from 'p-map';
+ 
+ import { formatDuration } from '../util/duration';
+ import { parseYouTube } from '../edlFormats';
+-import { appPath, isMasBuild, isStoreBuild, isWindows, isWindowsStoreBuild, testFailFsOperation, trashFile, unlinkWithRetry } from '../util';
++import { isMasBuild, isWindows, testFailFsOperation, trashFile, unlinkWithRetry } from '../util';
+ import type { ParseTimecode } from '../types';
+ import type { FindKeyframeMode } from '../ffmpeg';
+ import { dangerColor, primaryColor, warningColor } from '../colors';
+ import getSwal from '../swal';
+-import isDev from '../isDev';
+ import mainApi from '../mainApi';
+ 
+ const { lstat } = window.require('node:fs/promises');
+@@ -584,47 +582,6 @@ export function toastError(err: unknown) {
+   getSwal().toast.fire({ icon: 'error', title: i18n.t('Error'), text: textTruncated });
+ }
+ 
+-export async function checkAppPath() {
+-  try {
+-    const forceCheckMs = false;
+-    const forceCheckTitle = false;
+-    // this code is purposefully obfuscated to try to detect the most basic cloned app submissions to the MS Store
+-    // eslint-disable-next-line no-useless-concat, one-var, one-var-declaration-per-line
+-    const mf = 'mi' + 'fi.no', ap = 'Los' + 'slessC' + 'ut';
+-    let payload: string | undefined;
+-    if (isWindowsStoreBuild || (isDev && forceCheckMs)) {
+-      const appPathOrMock = isDev ? String.raw`C:\Program Files\WindowsApps\37672NoveltyStudio.MediaConverter_9.0.6.0_x64__vjhnv588cyf84` : appPath;
+-      const pathMatch = appPathOrMock.replaceAll('\\', '/').match(/Windows ?Apps\/([^/]+)/); // find the first component after WindowsApps
+-      // example pathMatch: 37672NoveltyStudio.MediaConverter_9.0.6.0_x64__vjhnv588cyf84
+-      if (!pathMatch) {
+-        console.warn('Unknown path match', appPathOrMock);
+-        return;
+-      }
+-      const pathSeg = pathMatch[1];
+-      if (pathSeg == null) return;
+-      if (pathSeg.startsWith(`57275${mf}.${ap}_`)) return;
+-      // this will report the path and may return a msg
+-      payload = `msstore-app-id:${pathSeg}`;
+-      // also check all store fakes (different title:)
+-    } else if (isStoreBuild || (isDev && forceCheckTitle)) {
+-      const { title } = document;
+-      if (!title.includes(ap)) {
+-        payload = `store-app-title:${title}`;
+-      }
+-    }
+-
+-    if (payload) {
+-      // eslint-disable-next-line no-useless-concat
+-      const url = 'htt' + 'ps:/' + '/los' + 'sles' + 'sc' + 'ut-anal' + 'ytics.mi' + 'fi.n' + `o/${payload.length}/${encodeURIComponent(btoa(payload))}`;
+-      // console.log('Reporting app', pathSeg, url);
+-      const response = await ky(url).json<{ invalid?: boolean, title: string, text: string }>();
+-      if (response.invalid) getSwal().toast.fire({ timer: 60000, icon: 'error', title: response.title, text: response.text });
+-    }
+-  } catch (err) {
+-    if (isDev) console.warn(err instanceof Error && err.message);
+-  }
+-}
+-
+ export function mustDisallowVob() {
+   // Because Apple is being nazi about the ability to open "copy protected DVD files"
+   if (isMasBuild) {
+diff --git a/src/renderer/src/edlFormats.test.ts b/src/renderer/src/edlFormats.test.ts
+index 5326fdee..554aa187 100644
+--- a/src/renderer/src/edlFormats.test.ts
++++ b/src/renderer/src/edlFormats.test.ts
+@@ -1,7 +1,7 @@
+ import { it, describe, expect, test } from 'vitest';
+ 
+ import type { Otio } from './edlFormats';
+-import { parseSrtToSegments, formatSrt, parseYouTube, formatYouTube, parseMplayerEdl, parseXmeml, parseFcpXml, parseCsv, parseCsvTime, getFrameValParser, formatCsvFrames, getFrameCountRaw, parsePbf, parseDvAnalyzerSummaryTxt, parseCutlist, parseDjiGps1, parseOtio, parseDjiGps2 } from './edlFormats';
++import { parseSrtToSegments, formatSrt, parseYouTube, formatYouTube, parseMplayerEdl, parseXmeml, parseFcpXml, parseCsv, parseCsvTime, getFrameValParser, formatCsvFrames, getFrameCountRaw, parsePbf, parseDvAnalyzerSummaryTxt, parseCutlist, parseOtio } from './edlFormats';
+ import { readFixture, readFixtureBinary } from './test/util';
+ import otioFixture from './test/fixtures/otio';
+ 
+@@ -366,21 +366,6 @@ it('parses DV Analyzer Summary.txt', async () => {
+   expect(parseDvAnalyzerSummaryTxt(await readFixture('DV Analyzer Summary.txt', 'utf8'))).toMatchSnapshot();
+ });
+ 
+-test('parseDjiGps1', () => {
+-  expect(parseDjiGps1(['F/2.8, SS 776.89, ISO 100, EV -1.0, GPS (15.0732, 67.9771, 19), D 67.78m, H 20.30m, H.S 1.03m/s, V.S 0.00m/s'])).toMatchSnapshot();
+-  // https://github.com/mifi/lossless-cut/issues/2072#issuecomment-2325755148
+-  expect(parseDjiGps1(['F/2.8, SS 678.52, ISO 100, EV 0, DZOOM 1.000, GPS (-3.9130, 56.5019, 26), D 0.57m, H 102.40m, H.S 0.00m/s, V.S -0.00m/s'])).toMatchSnapshot();
+-});
+-
+-test('parseDjiGps2', () => {
+-  // SRT format DJI Air 3
+-  expect(parseDjiGps2([
+-    '<font size="28">FrameCnt: 446, DiffTime: 34ms',
+-    '2025-09-15 14:35:09.229',
+-    '[iso: 120] [shutter: 1/3388.79] [fnum: 1.7] [ev: 0] [color_md : default] [focal_len: 24.00] [latitude: 62.229033] [longitude: 6.552877] [rel_alt: 3.700 abs_alt: 1245.046] [ct: 5341] </font>',
+-  ])).toMatchSnapshot();
+-});
+-
+ test('otio', () => {
+   expect(parseOtio(otioFixture satisfies Otio)).toMatchSnapshot();
+ });
+diff --git a/src/renderer/src/edlFormats.ts b/src/renderer/src/edlFormats.ts
+index 91f86472..839adbd5 100644
+--- a/src/renderer/src/edlFormats.ts
++++ b/src/renderer/src/edlFormats.ts
+@@ -478,57 +478,6 @@ export function formatSrt(segments: SegmentBase[]) {
+   return segments.reduce((acc, segment, index) => `${acc}${index > 0 ? '\r\n' : ''}${index + 1}\r\n${formatDuration({ seconds: segment.start }).replaceAll('.', ',')} --> ${formatDuration({ seconds: segment.end }).replaceAll('.', ',')}\r\n${segment.name || '-'}\r\n`, '');
+ }
+ 
+-export function parseDjiGps1(lines: string[]) {
+-  const firstLine = lines[0];
+-  if (firstLine == null) return undefined;
+-
+-  const gpsMatch = firstLine.match(/^\s*([^,]+),\s*SS\s+([^,]+),\s*ISO\s+([^,]+),\s*EV\s+([^,]+)(?:,\s*DZOOM\s+([^,]+))?,\s*GPS\s+\(([^,]+),\s*([^,]+),\s*([^,]+)\),\s*D\s+([^m]+)m,\s*H\s+([^m]+)m,\s*H\.S\s+([^m]+)m\/s,\s*V\.S\s+([^m]+)m\/s\s*$/);
+-  if (!gpsMatch) return undefined;
+-  return {
+-    f: gpsMatch[1]!,
+-    ss: parseFloat(gpsMatch[2]!),
+-    iso: parseInt(gpsMatch[3]!, 10),
+-    ev: parseFloat(gpsMatch[4]!),
+-    dzoom: gpsMatch[5] != null ? parseFloat(gpsMatch[5]) : undefined,
+-    lng: parseFloat(gpsMatch[6]!),
+-    lat: parseFloat(gpsMatch[7]!),
+-    alt: parseFloat(gpsMatch[8]!),
+-    distance: parseFloat(gpsMatch[9]!),
+-    height: parseFloat(gpsMatch[10]!),
+-    horizontalSpeed: parseFloat(gpsMatch[11]!),
+-    verticalSpeed: parseFloat(gpsMatch[12]!),
+-  };
+-}
+-
+-export function parseDjiGps2(lines: string[]) {
+-  const xml = new XMLParser().parse(lines.join('\n'));
+-  invariant(typeof xml.font === 'string');
+-  const line: string = xml.font.split('\n')[2];
+-  invariant(line != null);
+-  const records: Record<string, string> = {};
+-  const pairsMatch = line.match(/([^\s:[]+\s*:\s*[^\s\]]+)+/g);
+-  if (pairsMatch == null) return undefined;
+-  for (const match of pairsMatch) {
+-    const split = match.split(':');
+-    if (split.length === 2) {
+-      const [key, value] = split;
+-      if (key != null && value != null) {
+-        records[key.trim()] = value.trim();
+-      }
+-    }
+-  }
+-  const altitude = parseFloat(records['abs_alt']!);
+-  const lat = parseFloat(records['latitude']!);
+-  const lng = parseFloat(records['longitude']!);
+-  invariant(!Number.isNaN(lat));
+-  invariant(!Number.isNaN(lng));
+-  return {
+-    altitude: Number.isNaN(altitude) ? undefined : altitude,
+-    lat,
+-    lng,
+-  };
+-}
+-
+ const otioSchema = z.object({
+   OTIO_SCHEMA: z.string().refine((val) => val.startsWith('Timeline.'), { message: 'Invalid OTIO schema' }),
+   name: z.string(),
+diff --git a/src/renderer/src/ffmpeg.ts b/src/renderer/src/ffmpeg.ts
+index 7444438e..01e3747d 100644
+--- a/src/renderer/src/ffmpeg.ts
++++ b/src/renderer/src/ffmpeg.ts
+@@ -11,7 +11,7 @@ import { pcmAudioCodecs, isMov } from './util/streams';
+ import { isExecaError } from './util';
+ import { isDurationValid } from './segments';
+ import type { FFprobeChapter, FFprobeFormat, FFprobeProbeResult, FFprobeStream } from '../../common/ffprobe';
+-import { parseSrt, parseSrtToSegments } from './edlFormats';
++import { parseSrtToSegments } from './edlFormats';
+ import { UnsupportedFileError, UserFacingError } from '../errors';
+ import mainApi from './mainApi';
+ import { parseFfprobeDuration } from '../../common/util';
+@@ -398,11 +398,6 @@ export async function extractSubtitleTrackToSegments(filePath: string, streamId:
+   return parseSrtToSegments(srt);
+ }
+ 
+-export async function extractSrtGpsTrack(filePath: string, streamId: number) {
+-  const srt = await extractSubtitleTrack(filePath, streamId);
+-  return parseSrt(srt);
+-}
+-
+ export async function extractSubtitleTrackVtt(filePath: string, streamId: number) {
+   const args = [
+     '-hide_banner',
+diff --git a/src/renderer/src/hooks/useUserSettingsRoot.ts b/src/renderer/src/hooks/useUserSettingsRoot.ts
+index 4730ad4a..5b4b3ca2 100644
+--- a/src/renderer/src/hooks/useUserSettingsRoot.ts
++++ b/src/renderer/src/hooks/useUserSettingsRoot.ts
+@@ -169,8 +169,6 @@ export default function useUserSettingsRoot() {
+   useEffect(() => safeSetConfig({ captureFrameFileNameFormat }), [captureFrameFileNameFormat]);
+   const [enableNativeHevc, setEnableNativeHevc] = useState(safeGetConfigInitial('enableNativeHevc'));
+   useEffect(() => safeSetConfig({ enableNativeHevc }), [enableNativeHevc]);
+-  const [enableUpdateCheck, setEnableUpdateCheck] = useState(safeGetConfigInitial('enableUpdateCheck'));
+-  useEffect(() => safeSetConfig({ enableUpdateCheck }), [enableUpdateCheck]);
+   const [cleanupChoices, setCleanupChoices] = useState(safeGetConfigInitial('cleanupChoices'));
+   useEffect(() => safeSetConfig({ cleanupChoices }), [cleanupChoices]);
+   const [allowMultipleInstances, setAllowMultipleInstances] = useState(safeGetConfigInitial('allowMultipleInstances'));
+@@ -302,7 +300,6 @@ export default function useUserSettingsRoot() {
+     captureFrameQuality,
+     captureFrameFileNameFormat,
+     enableNativeHevc,
+-    enableUpdateCheck,
+     cleanupChoices,
+     allowMultipleInstances,
+     darkMode,
+@@ -384,7 +381,6 @@ export default function useUserSettingsRoot() {
+     setCaptureFrameQuality,
+     setCaptureFrameFileNameFormat,
+     setEnableNativeHevc,
+-    setEnableUpdateCheck,
+     setCleanupChoices,
+     setAllowMultipleInstances,
+     toggleDarkMode,
+diff --git a/src/renderer/src/mifi.ts b/src/renderer/src/mifi.ts
+index 241954af..30e16796 100644
+--- a/src/renderer/src/mifi.ts
++++ b/src/renderer/src/mifi.ts
+@@ -1,23 +1,11 @@
+-import ky from 'ky';
+ import i18n from 'i18next';
+ 
+ import { runFfmpegStartupCheck, getFfmpegPath } from './ffmpeg';
+-import isDev from './isDev';
+ import { openSendReportDialog } from './reporting';
+ import { isMasBuild } from './util';
+ 
+ 
+-export async function loadMifiLink() {
+-  try {
+-    // In old versions: https://mifi.no/losslesscut/config.json
+-    return await ky('https://losslesscut.mifi.no/config.json').json();
+-    // return await ky('http://localhost:8080/losslesscut/config-dev.json').json();
+-  } catch (err) {
+-    if (isDev) console.error(err);
+-    return undefined;
+-  }
+-}
+-
++// eslint-disable-next-line import/prefer-default-export
+ export async function runStartupCheck({ customFfPath, onError }: { customFfPath: string | undefined, onError: (error: { title: string, message: string }) => void }) {
+   try {
+     return await runFfmpegStartupCheck();
+diff --git a/src/renderer/src/util/streams.ts b/src/renderer/src/util/streams.ts
+index ba657399..ab8c01af 100644
+--- a/src/renderer/src/util/streams.ts
++++ b/src/renderer/src/util/streams.ts
+@@ -2,7 +2,6 @@ import invariant from 'tiny-invariant';
+ import type { FFprobeStream, FFprobeStreamDisposition } from '../../../common/ffprobe';
+ import type { AvoidNegativeTs } from '../../../common/types';
+ import type { AllFilesMeta, ChromiumHTMLAudioElement, ChromiumHTMLVideoElement, CopyfileStreams, LiteFFprobeStream } from '../types';
+-import type { FileStream } from '../ffmpeg';
+ 
+ 
+ // taken from `ffmpeg -codecs`
+@@ -318,7 +317,6 @@ export function getEffectiveAvoidNegativeTs({ avoidNegativeTs, allFilesMeta, cop
+ export const getAudioStreams = <T extends Pick<FFprobeStream, 'codec_type'>>(streams: T[]) => streams.filter((stream) => stream.codec_type === 'audio');
+ export const getRealVideoStreams = <T extends Pick<FFprobeStream, 'codec_type' | 'disposition'>>(streams: T[]) => streams.filter((stream) => stream.codec_type === 'video' && !isStreamThumbnail(stream));
+ export const getSubtitleStreams = <T extends Pick<FFprobeStream, 'codec_type'>>(streams: T[]) => streams.filter((stream) => stream.codec_type === 'subtitle');
+-export const isGpsStream = <T extends Pick<FileStream, 'guessedType' | 'codec_type' | 'tags'>>(stream: T) => stream.codec_type === 'subtitle' && (stream.tags?.['handler_name'] === '\u0010DJI.Subtitle' || stream.guessedType === 'dji-gps-srt');
+ 
+ // videoTracks/audioTracks seems to be 1-indexed, while ffmpeg is 0-indexes
+ const getHtml5TrackId = (ffmpegTrackIndex: number) => String(ffmpegTrackIndex + 1);
